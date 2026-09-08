@@ -1,0 +1,275 @@
+// ─── HELPERS ──────────────────────────────────────────────────────────────────
+const R = (id) => document.getElementById(id);
+const money = (v) => 'R$ ' + Number(v || 0).toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+const num = (v, d = 0) => Number(v || 0).toFixed(d);
+const dateStr = (s) => s ? new Date(s).toLocaleDateString('pt-BR') : '—';
+const statusColors = {
+  DISPONIVEL: 'green', IMPRIMINDO: 'blue', MANUTENCAO: 'yellow', OFFLINE: 'red',
+  APROVADO: 'green', REPROVADO: 'red', CANCELADO: 'gray',
+  EM_DESENVOLVIMENTO: 'blue', EM_TESTE: 'yellow', EM_PRODUCAO: 'purple', ARQUIVADO: 'gray',
+  ORCAMENTO: 'gray', AGUARDANDO_PAGAMENTO: 'yellow', CONFIRMADO: 'blue',
+  ACABAMENTO: 'purple', PRONTO: 'green', ENTREGUE: 'green',
+  PENDENTE: 'yellow', PAGO: 'green', ATRASADO: 'red',
+  AGUARDANDO: 'gray', PREPARANDO: 'yellow',
+  SUCESSO: 'green', FALHA: 'red',
+  ENTRADA: 'green', SAIDA: 'red', CONSUMO: 'yellow', DESPERDICIO: 'red', AJUSTE: 'blue', DEVOLUCAO: 'purple',
+  COMERCIAL: 'blue', PESSOAL: 'purple', PROTOTIPO: 'yellow', ESCOLAR: 'green', ROBOTICA: 'purple', EXPERIMENTAL: 'gray',
+};
+const badge = (val) => {
+  const c = statusColors[val] || 'gray';
+  return `<span class="badge badge-${c}">${val?.replace(/_/g, ' ') || '—'}</span>`;
+};
+
+function toast(msg, type = 'ok') {
+  const t = document.createElement('div');
+  t.style.cssText = `position:fixed;bottom:1.5rem;right:1.5rem;background:${type === 'ok' ? 'var(--green)' : 'var(--red)'};color:#fff;padding:.7rem 1.2rem;border-radius:8px;font-size:.88rem;z-index:9999;box-shadow:var(--shadow)`;
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 3000);
+}
+
+function confirm(msg) { return window.confirm(msg); }
+
+// ─── MODAL ────────────────────────────────────────────────────────────────────
+function openModal(title, bodyHtml, footerHtml, lg = false) {
+  closeModal();
+  const el = document.createElement('div');
+  el.className = 'modal-overlay';
+  el.id = 'modal-overlay';
+  el.innerHTML = `
+    <div class="modal${lg ? ' lg' : ''}">
+      <div class="modal-header">
+        <h3>${title}</h3>
+        <button class="btn btn-secondary btn-sm btn-icon" onclick="closeModal()">✕</button>
+      </div>
+      <div class="modal-body">${bodyHtml}</div>
+      <div class="modal-footer">${footerHtml}</div>
+    </div>`;
+  document.body.appendChild(el);
+}
+function closeModal() { document.getElementById('modal-overlay')?.remove(); }
+
+// ─── LOGIN / CADASTRO / LOGOUT ───────────────────────────────────────────────
+function showLogin() {
+  R('register-form').style.display = 'none';
+  R('login-form').style.display = 'grid';
+  R('register-error').style.display = 'none';
+}
+function showRegister() {
+  R('login-form').style.display = 'none';
+  R('register-form').style.display = 'grid';
+  R('login-error').style.display = 'none';
+  R('register-name').focus();
+}
+
+function saveSession(data) {
+  API.token = data.token;
+  localStorage.setItem('g3d_token', data.token);
+  localStorage.setItem('g3d_user', JSON.stringify(data.user));
+  startApp(data.user);
+}
+
+async function doLogin() {
+  const email = R('login-email').value.trim();
+  const pass = R('login-pass').value;
+  const err = R('login-error');
+  err.style.display = 'none';
+  try {
+    const data = await fetch('/api/auth/login', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password: pass })
+    }).then(async r => {
+      const json = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(json.error || 'Erro ao entrar');
+      return json;
+    });
+    saveSession(data);
+  } catch (e) {
+    err.textContent = e.message;
+    err.style.display = 'block';
+  }
+}
+
+async function doRegister() {
+  const name = R('register-name').value.trim();
+  const email = R('register-email').value.trim();
+  const password = R('register-pass').value;
+  const confirmPassword = R('register-pass-confirm').value;
+  const err = R('register-error');
+  err.style.display = 'none';
+
+  if (password !== confirmPassword) {
+    err.textContent = 'As senhas não são iguais';
+    err.style.display = 'block';
+    return;
+  }
+
+  try {
+    const data = await fetch('/api/auth/register', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, email, password })
+    }).then(async r => {
+      const json = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(json.error || 'Erro ao criar conta');
+      return json;
+    });
+    saveSession(data);
+  } catch (e) {
+    err.textContent = e.message;
+    err.style.display = 'block';
+  }
+}
+
+R('login-pass').addEventListener('keydown', e => e.key === 'Enter' && doLogin());
+R('register-pass-confirm').addEventListener('keydown', e => e.key === 'Enter' && doRegister());
+
+function doLogout() {
+  localStorage.removeItem('g3d_token');
+  localStorage.removeItem('g3d_user');
+  API.token = null;
+  R('app').style.display = 'none';
+  R('login-screen').style.display = 'flex';
+  showLogin();
+}
+
+function initTheme() {
+  const saved = localStorage.getItem('g3d_theme');
+  const theme = saved === 'light' ? 'light' : 'dark';
+  document.documentElement.dataset.theme = theme;
+  updateThemeButton();
+}
+
+function updateThemeButton() {
+  const light = document.documentElement.dataset.theme === 'light';
+  const icon = R('theme-icon');
+  const label = R('theme-label');
+  if (icon) icon.textContent = light ? '🌙' : '☀️';
+  if (label) label.textContent = light ? 'Escuro' : 'Claro';
+}
+
+function toggleTheme() {
+  const next = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light';
+  document.documentElement.dataset.theme = next;
+  localStorage.setItem('g3d_theme', next);
+  updateThemeButton();
+}
+
+function updateTopbarClock() {
+  const now = new Date();
+  const date = R('topbar-date');
+  const time = R('topbar-time');
+  if (date) date.textContent = now.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' });
+  if (time) time.textContent = now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
+function weatherEmoji(code) {
+  if (code === 0) return '☀️';
+  if ([1,2,3].includes(code)) return '⛅';
+  if ([45,48].includes(code)) return '🌫️';
+  if ([51,53,55,56,57].includes(code)) return '🌦️';
+  if ([61,63,65,66,67,80,81,82].includes(code)) return '🌧️';
+  if ([71,73,75,77].includes(code)) return '❄️';
+  if ([95,96,99].includes(code)) return '⛈️';
+  return '🌤️';
+}
+
+window.g3dWeather = { status: 'loading', temperature: null, humidity: null, code: null, updatedAt: null, latitude: null, longitude: null };
+
+async function updateWeather() {
+  const text = R('weather-text');
+  const icon = R('weather-icon');
+  if (!text) return;
+  try {
+    window.g3dWeather.status = 'loading';
+    if (!navigator.geolocation) throw new Error('Geolocalização indisponível');
+    const position = await new Promise((resolve, reject) => {
+      navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: false, timeout: 8000, maximumAge: 600000 });
+    });
+    const { latitude, longitude } = position.coords;
+    window.g3dWeather.latitude = latitude;
+    window.g3dWeather.longitude = longitude;
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${encodeURIComponent(latitude)}&longitude=${encodeURIComponent(longitude)}&current=temperature_2m,relative_humidity_2m,weather_code&temperature_unit=celsius&timezone=auto`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('Falha na API meteorológica');
+    const data = await res.json();
+    const temp = data?.current?.temperature_2m;
+    const humidity = data?.current?.relative_humidity_2m;
+    if (temp == null || humidity == null) throw new Error('Dados meteorológicos incompletos');
+    const code = data?.current?.weather_code;
+    window.g3dWeather = { status: 'ok', temperature: Number(temp), humidity: Number(humidity), code, updatedAt: new Date(), latitude, longitude };
+    text.textContent = `${Number(temp).toFixed(0)}°C • ${Number(humidity).toFixed(0)}% umid.`;
+    if (icon) icon.textContent = weatherEmoji(code);
+    window.dispatchEvent(new CustomEvent('g3d-weather-updated'));
+  } catch {
+    window.g3dWeather = { ...window.g3dWeather, status: 'error' };
+    text.textContent = 'Clima indisponível';
+    if (icon) icon.textContent = '🌡️';
+    window.dispatchEvent(new CustomEvent('g3d-weather-updated'));
+  }
+}
+
+function startApp(user) {
+  R('login-screen').style.display = 'none';
+  R('app').style.display = 'flex';
+  R('user-name').textContent = user.name;
+  initTheme();
+  updateTopbarClock();
+  clearInterval(window.g3dClockTimer);
+  window.g3dClockTimer = setInterval(updateTopbarClock, 1000);
+  updateWeather();
+  clearInterval(window.g3dWeatherTimer);
+  window.g3dWeatherTimer = setInterval(updateWeather, 10 * 60 * 1000);
+  navigate('dashboard');
+}
+
+// ─── NAVIGATION ───────────────────────────────────────────────────────────────
+const pageRenderers = window.pageRenderers || (window.pageRenderers = {});
+let currentPage = '';
+
+function showPageError(error) {
+  const message = error?.message || 'Não foi possível carregar esta página.';
+  R('content').innerHTML = `
+    <div class="alert danger" style="margin:1rem 0">
+      ⚠️ <strong>Erro ao carregar a página</strong><br>
+      <span style="display:block;margin-top:.35rem">${message}</span>
+      <button class="btn btn-secondary btn-sm" style="margin-top:.75rem" onclick="navigate(currentPage)">Tentar novamente</button>
+    </div>`;
+}
+
+function navigate(page) {
+  currentPage = page;
+  document.querySelectorAll('.nav-item').forEach(el => el.classList.toggle('active', el.dataset.page === page));
+  const titles = {
+    dashboard: 'Dashboard', projetos: 'Projetos', testes: 'Testes de Impressão',
+    produtos: 'Produtos', pedidos: 'Pedidos', producao: 'Produção',
+    impressoras: 'Impressoras', estoque: 'Estoque', clientes: 'Clientes',
+    financeiro: 'Financeiro', relatorios: 'Relatórios', configuracoes: 'Configurações'
+  };
+  R('page-title').textContent = titles[page] || page;
+  R('content').innerHTML = `<div style="color:var(--text2);padding:2rem;text-align:center">Carregando...</div>`;
+  if (pageRenderers[page]) {
+    Promise.resolve(pageRenderers[page]()).catch(showPageError);
+  } else {
+    showPageError(new Error(`Módulo "${page}" não foi carregado.`));
+  }
+  closeSidebar();
+}
+
+function toggleSidebar() {
+  R('sidebar').classList.toggle('open');
+  R('mobile-overlay').classList.toggle('open');
+}
+function closeSidebar() {
+  R('sidebar').classList.remove('open');
+  R('mobile-overlay').classList.remove('open');
+}
+
+// ─── BOOT ─────────────────────────────────────────────────────────────────────
+const saved = localStorage.getItem('g3d_user');
+if (saved && API.token) {
+  try { startApp(JSON.parse(saved)); } catch { doLogout(); }
+}
+
+// Theme is also initialized before login so the preference is preserved.
+initTheme();
+updateTopbarClock();
