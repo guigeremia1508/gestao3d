@@ -9,13 +9,15 @@ const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 app.use(express.json());
-app.use(express.static(path.join(__dirname, '../frontend')));
+
+// Serve frontend (agora está em ./frontend relativamente à raiz)
+app.use(express.static(path.join(__dirname, 'frontend')));
 
 // Routes
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api', require('./routes/api'));
 
-// Erros da API devem ser sempre JSON, nunca uma página HTML com "<!DOCTYPE".
+// Erro de API → sempre JSON
 app.use('/api', (err, req, res, next) => {
   console.error('API error:', err);
   res.status(err.status || 500).json({ error: 'Erro interno do servidor.' });
@@ -27,13 +29,17 @@ app.use('/api', (req, res) => {
 
 // SPA fallback
 app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, '../frontend/index.html'));
+  res.sendFile(path.join(__dirname, 'frontend', 'index.html'));
 });
 
-// Init DB and start
-initDb();
-app.listen(PORT, () => {
-  console.log(`\n🖨️  Gestão 3D rodando em http://localhost:${PORT}`);
-  console.log(`📧  Login: admin@gestao3d.com`);
-  console.log(`🔑  Senha: admin123\n`);
+// Init DB e start
+initDb().then(() => {
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`\n🖨️  Gestão 3D rodando na porta ${PORT}`);
+    console.log(`📧  Login: admin@gestao3d.com`);
+    console.log(`🔑  Senha: admin123\n`);
+  });
+}).catch(err => {
+  console.error('Erro ao inicializar banco:', err);
+  process.exit(1);
 });
