@@ -14,7 +14,7 @@ function renderProdutos(filter = '') {
         <button class="btn btn-primary" onclick="openProdutoModal()">+ Novo Produto</button>
       </div>
       <table>
-        <thead><tr><th>Código</th><th>Nome</th><th>Projeto</th><th>Peso</th><th>Tempo</th><th>Custo Total</th><th>Preço</th><th>Margem</th><th>Status</th><th></th></tr></thead>
+        <thead><tr><th>Código</th><th>Nome</th><th>Projeto</th><th>Peso</th><th>Tempo</th><th>Peças</th><th>Custo Total</th><th>Preço</th><th>Margem</th><th>Status</th><th></th></tr></thead>
         <tbody>
           ${list.length ? list.map(p => `
             <tr>
@@ -23,7 +23,7 @@ function renderProdutos(filter = '') {
               <td>${p.project_name || '—'}</td>
               <td>${num(p.weight_g,1)}g</td>
               <td>${num(p.print_time_min,0)}min</td>
-              <td>${money(p.cost_total)}</td>
+              <td>${money(p.cost_parts||0)}</td><td>${money(p.cost_total)}</td>
               <td>${money(p.price)}</td>
               <td>${num(p.margin,1)}%</td>
               <td>${p.active ? '<span class="badge badge-green">Ativo</span>' : '<span class="badge badge-gray">Inativo</span>'}</td>
@@ -31,7 +31,7 @@ function renderProdutos(filter = '') {
                 <button class="btn btn-secondary btn-sm" onclick="openProdutoModal(${p.id})">✏️</button>
                 <button class="btn btn-danger btn-sm" onclick="deleteProduto(${p.id})">🗑️</button>
               </div></td>
-            </tr>`).join('') : '<tr><td colspan="10" style="text-align:center;color:var(--text2);padding:2rem">Nenhum produto cadastrado</td></tr>'}
+            </tr>`).join('') : '<tr><td colspan="11" style="text-align:center;color:var(--text2);padding:2rem">Nenhum produto cadastrado</td></tr>'}
         </tbody>
       </table>
     </div>`;

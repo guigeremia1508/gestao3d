@@ -30,4 +30,13 @@ const API = {
   post: (p, b) => API.request('POST', p, b),
   put: (p, b) => API.request('PUT', p, b),
   del: (p) => API.request('DELETE', p),
+  async upload(path, file) {
+    const fd = new FormData();
+    fd.append('image', file);
+    const res = await fetch(this.base + path, { method:'POST', headers:{ Authorization:`Bearer ${this.token}` }, body:fd });
+    if (res.status === 401) { doLogout(); return; }
+    const data = await res.json().catch(()=>({}));
+    if (!res.ok) throw new Error(data.error || 'Erro ao enviar imagem');
+    return data;
+  },
 };

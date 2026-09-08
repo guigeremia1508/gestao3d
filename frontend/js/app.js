@@ -242,7 +242,7 @@ function navigate(page) {
   const titles = {
     dashboard: 'Dashboard', projetos: 'Projetos', testes: 'Testes de Impressão',
     produtos: 'Produtos', pedidos: 'Pedidos', producao: 'Produção',
-    impressoras: 'Impressoras', estoque: 'Estoque', clientes: 'Clientes',
+    impressoras: 'Impressoras', estoque: 'Filamentos', ferramentas: 'Ferramentas & Consumíveis', pecas: 'Parafusos & Peças', clientes: 'Clientes',
     financeiro: 'Financeiro', relatorios: 'Relatórios', configuracoes: 'Configurações'
   };
   R('page-title').textContent = titles[page] || page;

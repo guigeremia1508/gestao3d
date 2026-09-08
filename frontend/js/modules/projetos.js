@@ -26,7 +26,7 @@ function renderProjetos(filter = '') {
               <td>${p.tests_count || 0}</td>
               <td>${p.responsible || '—'}</td>
               <td><div class="actions">
-                <button class="btn btn-secondary btn-sm" onclick="openVersoesModal(${p.id},'${p.name}')">📋 Versões</button>
+                <button class="btn btn-secondary btn-sm" onclick="openVersoesModal(${p.id},'${p.name}')">📋 Versões</button><button class="btn btn-secondary btn-sm" onclick="openProjetoPecasModal(${p.id},'${p.name}')">🔩 Peças</button>
                 <button class="btn btn-secondary btn-sm" onclick="openProjetoModal(${p.id})">✏️</button>
                 <button class="btn btn-danger btn-sm" onclick="deleteProjeto(${p.id})">🗑️</button>
               </div></td>
@@ -103,3 +103,14 @@ async function saveVersao(pid) {
   if (!body.version) return toast('Versão é obrigatória', 'err');
   try { await API.post(`/projects/${pid}/versions`, body); toast('Versão adicionada!'); openVersoesModal(pid, ''); } catch (e) { toast(e.message, 'err'); }
 }
+
+async function openProjetoPecasModal(pid,pname){
+ const [parts,current]=await Promise.all([API.get('/parts'),API.get(`/projects/${pid}/parts`)]);
+ openModal(`🔩 Peças do projeto — ${pname}`,`
+  <div class="form-grid" style="margin-bottom:1rem"><div class="form-group"><label>Peça *</label><select id="pp-part"><option value="">Selecione...</option>${parts.map(x=>`<option value="${x.id}">${x.name}${x.type?' — '+x.type:''}${x.size?' — '+x.size:''} (estoque ${num(x.current_qty,2)})</option>`).join('')}</select></div><div class="form-group"><label>Quantidade *</label><input type="number" id="pp-qty" value="1" min="0.01" step="0.01"></div></div>
+  <div class="alert warn" style="margin-bottom:1rem">Ao adicionar, a quantidade é baixada do estoque imediatamente e o custo da peça fica registrado no projeto.</div>
+  <table><thead><tr><th>Peça</th><th>Qtd.</th><th>Custo/un</th><th>Total</th><th></th></tr></thead><tbody>${current.length?current.map(x=>`<tr><td>${x.name}<br><small>${x.type||''} ${x.size||''}</small></td><td>${num(x.quantity,2)}</td><td>${money(x.unit_cost)}</td><td>${money(x.total_cost)}</td><td><button class="btn btn-danger btn-sm" onclick="removeProjetoPeca(${pid},${x.id},'${pname.replaceAll("'","\\'")}')">↩️</button></td></tr>`).join(''):'<tr><td colspan="5" style="color:var(--text2);text-align:center">Nenhuma peça vinculada.</td></tr>'}</tbody></table>`,
+ `<button class="btn btn-secondary" onclick="closeModal()">Fechar</button><button class="btn btn-primary" onclick="addProjetoPeca(${pid},'${pname.replaceAll("'","\\'")}')">+ Adicionar</button>`,true)
+}
+async function addProjetoPeca(pid,pname){const b={part_id:R('pp-part').value,quantity:R('pp-qty').value};if(!b.part_id)return toast('Selecione uma peça','err');try{await API.post(`/projects/${pid}/parts`,b);toast('Peça adicionada e estoque baixado!');openProjetoPecasModal(pid,pname); }catch(e){toast(e.message,'err')}}
+async function removeProjetoPeca(pid,id,pname){if(!confirm('Remover a peça e devolver ao estoque?'))return;try{await API.del(`/projects/${pid}/parts/${id}`);toast('Peça devolvida ao estoque');openProjetoPecasModal(pid,pname)}catch(e){toast(e.message,'err')}}

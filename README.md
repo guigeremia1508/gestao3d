@@ -1,102 +1,67 @@
-# 🖨️ Gestão 3D — Sistema de Gestão para Impressão 3D
+# 🖨️ Gestão 3D 2.0 — Railway + PostgreSQL + Cloudinary
 
-## Requisitos
-- Node.js 18+ (https://nodejs.org)
+Esta versão troca o SQLite temporário pelo PostgreSQL e adiciona estoque de ferramentas/consumíveis, parafusos/peças, manutenção preventiva e fotos em nuvem.
 
-## Como rodar
+## 1. Railway — banco PostgreSQL
+No projeto do Railway, adicione um serviço PostgreSQL. O Railway deve disponibilizar `DATABASE_URL` para a aplicação; confira em **Variables**.
 
-### 1. Instalar dependências
-```bash
-cd backend
-npm install
-```
+A aplicação cria as tabelas automaticamente ao iniciar. Não é necessário rodar SQL manualmente para um banco novo.
 
-### 2. Iniciar o servidor
-```bash
-node server.js
-```
-
-### 3. Acessar no navegador
-```
-http://localhost:3000
-```
-
-## Login inicial
-- **E-mail:** admin@gestao3d.com
-- **Senha:** admin123
-
-> ⚠️ Troque a senha depois do primeiro acesso em Configurações.
-
-## Estrutura do projeto
-```
-gestao3d/
-├── backend/
-│   ├── server.js              ← Servidor Node.js + Express
-│   ├── package.json
-│   ├── database/
-│   │   └── init.js            ← SQLite + todas as tabelas
-│   ├── middleware/
-│   │   └── auth.js            ← JWT auth
-│   └── routes/
-│       ├── auth.js            ← Login/logout
-│       └── api.js             ← Todas as rotas da API
-└── frontend/
-    ├── index.html             ← SPA principal
-    ├── css/
-    │   └── style.css
-    └── js/
-        ├── api.js             ← Helper de requisições
-        ├── app.js             ← Roteamento, login, helpers
-        └── modules/
-            ├── dashboard.js
-            ├── clientes.js
-            ├── impressoras.js
-            ├── estoque.js
-            ├── projetos.js
-            ├── testes.js
-            ├── produtos.js
-            ├── pedidos.js
-            ├── producao.js
-            ├── financeiro.js
-            ├── relatorios.js
-            └── configuracoes.js
-```
-
-## Módulos disponíveis
-| Módulo | Funcionalidades |
-|---|---|
-| Dashboard | Resumo financeiro, alertas, ROI |
-| Projetos | Cadastro, versões, histórico |
-| Testes | Registro de testes, falhas, baixa de estoque automática |
-| Produtos | Cadastro com calculadora de custo/preço/margem |
-| Pedidos | Ciclo completo ORÇAMENTO → ENTREGUE |
-| Produção | Ordens de produção, atualização de status |
-| Impressoras | Cadastro, status, histórico de manutenção |
-| Estoque | Rolos, movimentações auditáveis, alertas de mínimo |
-| Clientes | Cadastro com histórico de pedidos |
-| Financeiro | Receitas, despesas, investimentos, contas |
-| Relatórios | Financeiro, produção, produtos (por período) |
-| Configurações | Custos globais, ROI da impressora |
-
-## Banco de dados
-O banco SQLite é criado automaticamente em `backend/gestao3d.db` na primeira execução.
-Todos os registros financeiros e de estoque usam soft-delete (nunca são apagados de verdade).
-
-## Perfis de acesso
-- **ADMIN** — acesso total
-- **OPERADOR** — produção, estoque, testes
-- **CLIENTE** — apenas seus pedidos
-
-## Variáveis de ambiente (opcional)
-Crie um `.env` em `backend/`:
+### Variáveis recomendadas
 ```env
-PORT=3000
-JWT_SECRET=sua_chave_secreta_aqui
+DATABASE_URL=...        # fornecida pelo PostgreSQL do Railway
+JWT_SECRET=uma-chave-grande-e-secreta
+INVITE_CODE=seu-codigo
+CLOUDINARY_CLOUD_NAME=...
+CLOUDINARY_API_KEY=...
+CLOUDINARY_API_SECRET=...
 ```
 
-## Correções desta versão
-- Os módulos JavaScript das páginas foram mantidos no pacote (`frontend/js/modules/`).
-- Cadastro de conta disponível na tela de login.
-- Tratamento de erro de carregamento das páginas.
-- `better-sqlite3` atualizado para instalação com versões modernas do Node.
-- Proteções adicionais para consumo de filamento em testes e produção.
+As variáveis do Cloudinary são opcionais para o restante do sistema, mas necessárias para enviar fotos.
+
+## 2. Cloudinary
+Crie uma conta Cloudinary e informe as três variáveis acima no Railway. As imagens são enviadas para pastas `gestao3d/printers`, `gestao3d/parts` e `gestao3d/consumables`.
+
+## 3. Instalar e iniciar
+```bash
+npm install
+npm start
+```
+
+## 4. Login inicial
+- E-mail: `admin@gestao3d.com`
+- Senha: `admin123`
+
+Troque a senha depois do primeiro acesso.
+
+## 5. O que foi adicionado
+- PostgreSQL como banco principal, com criação automática do schema.
+- Ferramentas & Consumíveis: quantidade, mínimo, alerta, custo, movimentações e foto.
+- Parafusos & Peças: tipo/tamanho/material, estoque, custo, movimentações e foto.
+- Projeto → Peças: ao adicionar uma peça, o estoque é baixado imediatamente; ao remover, a peça volta para o estoque.
+- Produtos: o custo das peças do projeto entra automaticamente em `cost_parts` e no custo total/margem/markup.
+- Manutenção preventiva: planos por horas e/ou dias, próxima revisão, histórico e registro das horas da impressora.
+- Manutenção → consumo: pode baixar consumíveis e peças do estoque no mesmo registro da manutenção, usando transação.
+- Impressoras: foto hospedada no Cloudinary.
+- Dashboard: alerta conjunto para filamentos, consumíveis, peças e manutenções vencidas/próximas.
+
+## 6. Migração do antigo SQLite
+O ZIP recebido não contém um arquivo `gestao3d.db`, então não há dados SQLite antigos disponíveis para copiar automaticamente.
+
+Se você tiver uma cópia do antigo banco SQLite, coloque o arquivo como `gestao3d.db` na raiz e rode:
+```bash
+npm install
+npm run import:sqlite -- ./gestao3d.db
+```
+
+Para um ambiente Railway que já tenha dados antigos somente no `/tmp` do container anterior, esses dados não podem ser recuperados pelo novo deploy sem uma exportação prévia.
+
+## 7. Railway Deploy
+Depois de substituir os arquivos no VS Code:
+```bash
+git add .
+git commit -m "feat: migrar para PostgreSQL e adicionar estoque e manutenção"
+git push
+```
+
+No Railway, confirme `DATABASE_URL` e as variáveis do Cloudinary. O comando de start é `node server.js` via `npm start`.
