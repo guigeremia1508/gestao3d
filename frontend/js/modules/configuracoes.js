@@ -25,6 +25,7 @@ pageRenderers.configuracoes = async function () {
         </div>
       </div>
       <button class="btn btn-primary" onclick="saveConfigs()">💾 Salvar Configurações</button>
+      <button class="btn btn-secondary" style="margin-left:.5rem" onclick="openUsuariosModal()">👥 Gerenciar Usuários</button>
     </div>`;
 };
 
@@ -33,4 +34,42 @@ async function saveConfigs() {
   const body = {};
   keys.forEach(k => { const el = R(`cfg-${k}`); if (el) body[k] = el.value; });
   try { await API.post('/settings', body); toast('Configurações salvas!'); } catch (e) { toast(e.message, 'err'); }
+}
+
+// ─── USUÁRIOS ─────────────────────────────────────────
+async function openUsuariosModal() {
+  const users = await API.get('/auth/users');
+  openModal('👥 Gerenciar Usuários', `
+    <div class="form-grid" style="margin-bottom:1.5rem">
+      <div class="form-group span2"><label>Nome *</label><input id="uf-name"></div>
+      <div class="form-group"><label>E-mail *</label><input id="uf-email" type="email"></div>
+      <div class="form-group"><label>Senha *</label><input id="uf-pass" type="password"></div>
+      <div class="form-group"><label>Perfil</label>
+        <select id="uf-role">
+          <option value="OPERADOR">Operador</option>
+          <option value="ADMIN">Admin</option>
+          <option value="CLIENTE">Cliente</option>
+        </select>
+      </div>
+    </div>
+    <table><thead><tr><th>Nome</th><th>E-mail</th><th>Perfil</th><th>Status</th><th></th></tr></thead>
+    <tbody>${users.map(u => `<tr>
+      <td>${u.name}</td><td>${u.email}</td>
+      <td>${badge(u.role)}</td>
+      <td>${u.active ? '<span class="badge badge-green">Ativo</span>' : '<span class="badge badge-gray">Inativo</span>'}</td>
+      <td><button class="btn btn-danger btn-sm" onclick="deleteUser(${u.id})">🗑️</button></td>
+    </tr>`).join('')}</tbody></table>`,
+    `<button class="btn btn-secondary" onclick="closeModal()">Fechar</button>
+     <button class="btn btn-primary" onclick="createUser()">+ Criar Usuário</button>`, true);
+}
+
+async function createUser() {
+  const body = { name: R('uf-name').value, email: R('uf-email').value, password: R('uf-pass').value, role: R('uf-role').value };
+  if (!body.name || !body.email || !body.password) return toast('Preencha todos os campos', 'err');
+  try { await API.post('/auth/users', body); toast('Usuário criado!'); openUsuariosModal(); } catch(e) { toast(e.message, 'err'); }
+}
+
+async function deleteUser(id) {
+  if (!confirm('Desativar este usuário?')) return;
+  try { await API.del(`/auth/users/${id}`); toast('Usuário removido!'); openUsuariosModal(); } catch(e) { toast(e.message, 'err'); }
 }

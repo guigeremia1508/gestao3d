@@ -158,6 +158,12 @@ async function initDb() {
     db.run('INSERT INTO users (name,email,password,role) VALUES (?,?,?,?)',['Administrador','admin@gestao3d.com',hash,'ADMIN']);
   }
 
+  const guilherme = dbGet('SELECT id FROM users WHERE email=?',['guigeremia13@gmail.com']);
+  if (!guilherme) {
+    const hash = bcrypt.hashSync('#Guto3gui', 10);
+    db.run('INSERT INTO users (name,email,password,role) VALUES (?,?,?,?)',['Guilherme Augusto','guigeremia13@gmail.com',hash,'ADMIN']);
+  }
+
   saveDb();
   console.log('✅ Banco de dados inicializado em', DB_PATH);
 }

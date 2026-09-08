@@ -107,7 +107,7 @@ async function doRegister() {
   try {
     const data = await fetch('/api/auth/register', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, email, password })
+      body: JSON.stringify({ name, email, password, invite: R('register-invite').value.trim() })
     }).then(async r => {
       const json = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(json.error || 'Erro ao criar conta');
