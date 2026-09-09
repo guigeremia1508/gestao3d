@@ -18,10 +18,10 @@ function renderImpressoras() {
             ${badge(p.status)}
           </div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;font-size:.82rem;color:var(--text2);margin-bottom:1rem">
-            <span>🕐 ${num(p.total_hours,1)}h totais</span>
-            <span>🖨️ ${p.total_prints} impressões</span>
-            <span>❌ ${p.total_failures} falhas</span>
-            <span>🔴 ${num(p.filament_used_g,0)}g filamento</span>
+            <span>🕐 ${num(Number(p.total_hours||0)+Number(p.test_hours||0),1)}h totais</span>
+            <span>🖨️ ${Number(p.total_prints||0)+Number(p.test_prints||0)} impressões</span>
+            <span>❌ ${Number(p.total_failures||0)+Number(p.test_failures||0)} falhas</span>
+            <span>🔴 ${num(Number(p.filament_used_g||0)+Number(p.test_filament||0),0)}g filamento</span>
           </div>
           <div style="display:flex;gap:.5rem">
             <button class="btn btn-secondary btn-sm" onclick="openImpressoraModal(${p.id})">✏️ Editar</button>
@@ -33,7 +33,8 @@ function renderImpressoras() {
 }
 
 function openImpressoraModal(id) {
-  const p = id ? _impressoras.find(x => x.id === id) : {};
+  id = id ? Number(id) : 0;
+  const p = id ? (_impressoras.find(x => Number(x.id) === id) || {}) : {};
   openModal(id ? 'Editar Impressora' : 'Nova Impressora', `
     <div class="form-grid">
       <div class="form-group span2"><label>Nome *</label><input id="pf-name" value="${p.name||''}"></div>
@@ -118,3 +119,12 @@ async function openPlanModal(pid,pname){
     `<button class="btn btn-secondary" onclick="closeModal()">Fechar</button><button class="btn btn-primary" onclick="savePlan(${pid})">+ Criar plano</button>`,true);
 }
 async function savePlan(pid){const b={printer_id:pid,task:R('mp-task').value,interval_hours:R('mp-hours').value,interval_days:R('mp-days').value,next_due_date:R('mp-nextdate').value,next_due_hours:R('mp-nexthours').value,notes:R('mp-notes').value};if(!b.task)return toast('Informe a tarefa','err');try{await API.post('/maintenance/plans',b);closeModal();toast('Plano criado!')}catch(e){toast(e.message,'err')}}
+
+// Expor explicitamente as ações usadas pelos botões da tela.
+window.openImpressoraModal = openImpressoraModal;
+window.saveImpressora = saveImpressora;
+window.deleteImpressora = deleteImpressora;
+window.openManutencaoModal = openManutencaoModal;
+window.openPlanModal = openPlanModal;
+window.saveManutencao = saveManutencao;
+window.savePlan = savePlan;
