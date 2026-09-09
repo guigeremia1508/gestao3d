@@ -28,7 +28,7 @@ function toast(msg, type = 'ok') {
   setTimeout(() => t.remove(), 3000);
 }
 
-function confirm(msg) { return window.confirm(msg); }
+function confirmAction(msg) { return window.confirm(msg); }
 
 // ─── MODAL ────────────────────────────────────────────────────────────────────
 function openModal(title, bodyHtml, footerHtml, lg = false) {

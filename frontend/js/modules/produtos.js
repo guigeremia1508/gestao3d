@@ -113,6 +113,6 @@ async function saveProduto(id) {
 }
 
 async function deleteProduto(id) {
-  if (!confirm('Excluir este produto?')) return;
+  if (!confirmAction('Excluir este produto?')) return;
   try { await API.del(`/products/${id}`); toast('Excluído!'); pageRenderers.produtos(); } catch (e) { toast(e.message, 'err'); }
 }

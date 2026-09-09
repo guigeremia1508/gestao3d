@@ -70,6 +70,6 @@ async function createUser() {
 }
 
 async function deleteUser(id) {
-  if (!confirm('Desativar este usuário?')) return;
+  if (!confirmAction('Desativar este usuário?')) return;
   try { await API.del(`/auth/users/${id}`); toast('Usuário removido!'); openUsuariosModal(); } catch(e) { toast(e.message, 'err'); }
 }

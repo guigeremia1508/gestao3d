@@ -68,7 +68,7 @@ async function saveImpressora(id) {
 }
 
 async function deleteImpressora(id) {
-  if (!confirm('Excluir esta impressora?')) return;
+  if (!confirmAction('Excluir esta impressora?')) return;
   try { await API.del(`/printers/${id}`); toast('Excluída!'); pageRenderers.impressoras(); } catch (e) { toast(e.message, 'err'); }
 }
 

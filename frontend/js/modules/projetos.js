@@ -74,7 +74,7 @@ async function saveProjeto(id) {
 }
 
 async function deleteProjeto(id) {
-  if (!confirm('Arquivar este projeto?')) return;
+  if (!confirmAction('Arquivar este projeto?')) return;
   try { await API.del(`/projects/${id}`); toast('Excluído!'); pageRenderers.projetos(); } catch (e) { toast(e.message, 'err'); }
 }
 
@@ -113,4 +113,4 @@ async function openProjetoPecasModal(pid,pname){
  `<button class="btn btn-secondary" onclick="closeModal()">Fechar</button><button class="btn btn-primary" onclick="addProjetoPeca(${pid},'${pname.replaceAll("'","\\'")}')">+ Adicionar</button>`,true)
 }
 async function addProjetoPeca(pid,pname){const b={part_id:R('pp-part').value,quantity:R('pp-qty').value};if(!b.part_id)return toast('Selecione uma peça','err');try{await API.post(`/projects/${pid}/parts`,b);toast('Peça adicionada e estoque baixado!');openProjetoPecasModal(pid,pname); }catch(e){toast(e.message,'err')}}
-async function removeProjetoPeca(pid,id,pname){if(!confirm('Remover a peça e devolver ao estoque?'))return;try{await API.del(`/projects/${pid}/parts/${id}`);toast('Peça devolvida ao estoque');openProjetoPecasModal(pid,pname)}catch(e){toast(e.message,'err')}}
+async function removeProjetoPeca(pid,id,pname){if(!confirmAction('Remover a peça e devolver ao estoque?'))return;try{await API.del(`/projects/${pid}/parts/${id}`);toast('Peça devolvida ao estoque');openProjetoPecasModal(pid,pname)}catch(e){toast(e.message,'err')}}

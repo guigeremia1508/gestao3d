@@ -95,6 +95,6 @@ async function saveTransacao(id) {
 }
 
 async function deleteTransacao(id) {
-  if (!confirm('Excluir esta transação?')) return;
+  if (!confirmAction('Excluir esta transação?')) return;
   try { await API.del(`/finance/${id}`); toast('Excluído!'); pageRenderers.financeiro(); } catch (e) { toast(e.message, 'err'); }
 }

@@ -58,6 +58,6 @@ async function saveCliente(id) {
 }
 
 async function deleteCliente(id) {
-  if (!confirm('Excluir este cliente?')) return;
+  if (!confirmAction('Excluir este cliente?')) return;
   try { await API.del(`/customers/${id}`); toast('Excluído!'); pageRenderers.clientes(); } catch (e) { toast(e.message, 'err'); }
 }

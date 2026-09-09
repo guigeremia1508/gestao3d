@@ -114,6 +114,6 @@ async function savePedido(id) {
 }
 
 async function deletePedido(id) {
-  if (!confirm('Cancelar este pedido?')) return;
+  if (!confirmAction('Cancelar este pedido?')) return;
   try { await API.del(`/orders/${id}`); toast('Cancelado!'); pageRenderers.pedidos(); } catch (e) { toast(e.message, 'err'); }
 }
