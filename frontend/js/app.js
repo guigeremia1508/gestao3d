@@ -241,7 +241,7 @@ function navigate(page) {
   document.querySelectorAll('.nav-item').forEach(el => el.classList.toggle('active', el.dataset.page === page));
   const titles = {
     dashboard: 'Dashboard', projetos: 'Projetos', testes: 'Testes de Impressão',
-    produtos: 'Produtos', pedidos: 'Pedidos', producao: 'Produção',
+    produtos: 'Produtos', pedidos: 'Pedidos', orcamentos: 'Orçamentos', producao: 'Produção',
     impressoras: 'Impressoras', estoque: 'Filamentos', ferramentas: 'Ferramentas & Consumíveis', pecas: 'Parafusos & Peças', clientes: 'Clientes',
     financeiro: 'Financeiro', relatorios: 'Relatórios', configuracoes: 'Configurações'
   };

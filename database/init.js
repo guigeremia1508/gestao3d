@@ -180,6 +180,35 @@ CREATE TABLE IF NOT EXISTS transactions (
   reference_id BIGINT, reference_type TEXT, paid BOOLEAN DEFAULT FALSE, due_date DATE, paid_at TIMESTAMPTZ, notes TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), deleted_at TIMESTAMPTZ
 );
+CREATE TABLE IF NOT EXISTS quotes (
+  id BIGSERIAL PRIMARY KEY,
+  customer_id BIGINT REFERENCES customers(id) ON DELETE SET NULL,
+  product_id BIGINT REFERENCES products(id) ON DELETE SET NULL,
+  printer_id BIGINT REFERENCES printers(id) ON DELETE SET NULL,
+  roll_id BIGINT REFERENCES material_rolls(id) ON DELETE SET NULL,
+  product_description TEXT NOT NULL,
+  quantity INTEGER NOT NULL DEFAULT 1,
+  weight_g NUMERIC(14,2) NOT NULL DEFAULT 0,
+  print_time_min NUMERIC(14,2) NOT NULL DEFAULT 0,
+  labor_cost NUMERIC(14,2) NOT NULL DEFAULT 0,
+  other_costs NUMERIC(14,2) NOT NULL DEFAULT 0,
+  cost_material NUMERIC(14,2) NOT NULL DEFAULT 0,
+  cost_energy NUMERIC(14,2) NOT NULL DEFAULT 0,
+  cost_machine NUMERIC(14,2) NOT NULL DEFAULT 0,
+  cost_maintenance NUMERIC(14,2) NOT NULL DEFAULT 0,
+  cost_total NUMERIC(14,2) NOT NULL DEFAULT 0,
+  markup_percent NUMERIC(10,2) NOT NULL DEFAULT 0,
+  profit NUMERIC(14,2) NOT NULL DEFAULT 0,
+  price_total NUMERIC(14,2) NOT NULL DEFAULT 0,
+  real_margin_percent NUMERIC(10,2) NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'ORCAMENTO',
+  notes TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  deleted_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_quotes_customer ON quotes(customer_id);
+CREATE INDEX IF NOT EXISTS idx_quotes_created_at ON quotes(created_at);
 CREATE INDEX IF NOT EXISTS idx_rolls_material ON material_rolls(material_id);
 CREATE INDEX IF NOT EXISTS idx_stock_roll ON stock_movements(roll_id);
 CREATE INDEX IF NOT EXISTS idx_maintenance_plan_printer ON maintenance_plans(printer_id);
