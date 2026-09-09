@@ -29,16 +29,46 @@ router.post('/printers',async(req,res,next)=>{try{const b=req.body;if(!b.name)re
 router.put('/printers/:id',async(req,res,next)=>{try{const b=req.body;await dbRun('UPDATE printers SET name=$1,brand=$2,model=$3,serial=$4,purchase_date=$5,purchase_price=$6,location=$7,power_watts=$8,status=$9,notes=$10 WHERE id=$11',[b.name,b.brand||null,b.model||null,b.serial||null,b.purchase_date||null,n(b.purchase_price),b.location||null,n(b.power_watts),b.status||'DISPONIVEL',b.notes||null,req.params.id]);res.json({ok:true})}catch(e){next(e)}});
 router.delete('/printers/:id',async(req,res,next)=>{try{await dbRun('UPDATE printers SET deleted_at=NOW() WHERE id=$1',[req.params.id]);res.json({ok:true})}catch(e){next(e)}});
 router.get('/printers/:id/maintenance',async(req,res,next)=>{try{res.json(await dbAll(`SELECT pm.*,mp.task as plan_task FROM printer_maintenance pm LEFT JOIN maintenance_plans mp ON mp.id=pm.plan_id WHERE pm.printer_id=$1 ORDER BY pm.created_at DESC`,[req.params.id]))}catch(e){next(e)}});
-router.post('/printers/:id/maintenance',async(req,res,next)=>{try{const b=req.body;const result=await withTransaction(async tx=>{const r=await tx.get('INSERT INTO printer_maintenance(printer_id,plan_id,task,scheduled_at,done_at,hours_at,cost,parts_used,notes) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id',[req.params.id,b.plan_id||null,b.task,b.scheduled_at||null,b.done_at||null,b.hours_at!=null?n(b.hours_at):null,n(b.cost),b.parts_used||null,b.notes||null]);
+router.post('/printers/:id/maintenance',async(req,res,next)=>{try{const b=req.body;const result=await withTransaction(async tx=>{
+ const printer=await tx.get(`SELECT p.total_hours + COALESCE(t.test_hours,0) AS current_hours
+   FROM printers p LEFT JOIN (SELECT printer_id,COALESCE(SUM(CASE WHEN real_time_min>0 AND result<>'CANCELADO' THEN real_time_min ELSE 0 END),0)/60 AS test_hours FROM tests GROUP BY printer_id) t ON t.printer_id=p.id
+   WHERE p.id=$1 AND p.deleted_at IS NULL`,[req.params.id]);
+ if(!printer) throw Object.assign(new Error('Impressora não encontrada'),{status:404});
+ const plan=b.plan_id?await tx.get('SELECT * FROM maintenance_plans WHERE id=$1 AND printer_id=$2',[b.plan_id,req.params.id]):null;
+ if(b.plan_id&&!plan) throw Object.assign(new Error('Plano de manutenção não encontrado'),{status:404});
+ const completedHours=b.hours_at!==undefined&&b.hours_at!==''?n(b.hours_at):n(printer.current_hours);
+ const task=(b.task||plan?.task||'').trim();
+ if(!task) throw Object.assign(new Error('Tarefa é obrigatória'),{status:400});
+ const r=await tx.get('INSERT INTO printer_maintenance(printer_id,plan_id,task,scheduled_at,done_at,hours_at,cost,parts_used,notes) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id',
+   [req.params.id,b.plan_id||null,task,b.scheduled_at||null,b.done_at||null,completedHours,n(b.cost),b.parts_used||null,b.notes||null]);
  const maintenanceId=r.id;
- if(b.done_at&&b.plan_id) await tx.run(`UPDATE maintenance_plans SET last_completed_at=$1,last_completed_hours=$2,next_due_date=CASE WHEN interval_days IS NOT NULL THEN ($1::date + interval_days * INTERVAL '1 day') END,next_due_hours=CASE WHEN interval_hours IS NOT NULL THEN $2 + interval_hours END WHERE id=$3`,[b.done_at,n(b.hours_at),b.plan_id]);
+ if(b.done_at&&plan){
+   await tx.run(`UPDATE maintenance_plans
+     SET last_completed_at=$1,last_completed_hours=$2,
+         next_due_date=CASE WHEN interval_days IS NOT NULL THEN ($1::date + interval_days * INTERVAL '1 day') ELSE NULL END,
+         next_due_hours=CASE WHEN interval_hours IS NOT NULL THEN $2 + interval_hours ELSE NULL END
+     WHERE id=$3`,[b.done_at,completedHours,b.plan_id]);
+ }
  for(const item of (Array.isArray(b.consumables)?b.consumables:[])){await consumeItem(tx,{table:'tool_consumables',id:item.id,qty:item.quantity,movementTable:'consumable_movements',type:'maintenance',reason:'MANUTENCAO',referenceId:maintenanceId,notes:b.notes,userId:req.user.id});}
  for(const item of (Array.isArray(b.parts)?b.parts:[])){await consumeItem(tx,{table:'small_parts',id:item.id,qty:item.quantity,movementTable:'part_movements',type:'maintenance',reason:'MANUTENCAO',referenceId:maintenanceId,notes:b.notes,userId:req.user.id});}
  return r;});res.json({id:Number(result.id)})}catch(e){next(e)}});
 
-router.get('/maintenance/plans',async(req,res,next)=>{try{res.json(await dbAll(`SELECT mp.*,p.name printer_name,CASE WHEN mp.next_due_hours IS NOT NULL AND p.total_hours >= mp.next_due_hours THEN true WHEN mp.next_due_date IS NOT NULL AND CURRENT_DATE >= mp.next_due_date THEN true ELSE false END as due FROM maintenance_plans mp JOIN printers p ON p.id=mp.printer_id WHERE p.deleted_at IS NULL ORDER BY due DESC, p.name, mp.task`))}catch(e){next(e)}});
-router.post('/maintenance/plans',async(req,res,next)=>{try{const b=req.body;const printer=await dbGet('SELECT total_hours FROM printers WHERE id=$1 AND deleted_at IS NULL',[b.printer_id]);if(!printer)return res.status(404).json({error:'Impressora não encontrada'});const ih=b.interval_hours?n(b.interval_hours):null,id=b.interval_days?parseInt(b.interval_days):null;const dueHours=b.next_due_hours?n(b.next_due_hours):(ih!=null?n(printer.total_hours)+ih:null);const dueDate=b.next_due_date||null;const r=await dbGet(`INSERT INTO maintenance_plans(printer_id,task,interval_hours,interval_days,active,next_due_date,next_due_hours,notes) VALUES($1,$2,$3,$4,$5,CASE WHEN $6 IS NOT NULL THEN $6::date WHEN $4 IS NOT NULL THEN CURRENT_DATE + $4 * INTERVAL '1 day' ELSE NULL END,$7,$8) RETURNING id`,[b.printer_id,b.task,ih,id,b.active!==false,dueDate,dueHours,b.notes||null]);res.json({id:Number(r.id),next_due_hours:dueHours,next_due_date:dueDate})}catch(e){next(e)}});
-router.put('/maintenance/plans/:id',async(req,res,next)=>{try{const b=req.body;await dbRun('UPDATE maintenance_plans SET task=$1,interval_hours=$2,interval_days=$3,active=$4,next_due_date=$5,next_due_hours=$6,notes=$7 WHERE id=$8',[b.task,b.interval_hours?n(b.interval_hours):null,b.interval_days?parseInt(b.interval_days):null,b.active!==false,b.next_due_date||null,b.next_due_hours?n(b.next_due_hours):null,b.notes||null,req.params.id]);res.json({ok:true})}catch(e){next(e)}});
+const MAINT_WARNING_HOURS=20;
+router.get('/maintenance/plans',async(req,res,next)=>{try{res.json(await dbAll(`SELECT mp.*,p.name printer_name,
+  p.total_hours + COALESCE(t.test_hours,0) AS current_hours,
+  CASE
+    WHEN mp.next_due_hours IS NOT NULL AND p.total_hours + COALESCE(t.test_hours,0) >= mp.next_due_hours THEN 'ATRASADA'
+    WHEN mp.next_due_date IS NOT NULL AND CURRENT_DATE >= mp.next_due_date THEN 'ATRASADA'
+    WHEN mp.next_due_hours IS NOT NULL AND mp.next_due_hours-(p.total_hours + COALESCE(t.test_hours,0)) <= ${MAINT_WARNING_HOURS} THEN 'PROXIMA'
+    WHEN mp.next_due_date IS NOT NULL AND mp.next_due_date-CURRENT_DATE <= 7 THEN 'PROXIMA'
+    ELSE 'EM_DIA'
+  END AS status,
+  CASE WHEN mp.next_due_hours IS NOT NULL THEN GREATEST(mp.next_due_hours-(p.total_hours + COALESCE(t.test_hours,0)),0) END AS hours_remaining
+  FROM maintenance_plans mp JOIN printers p ON p.id=mp.printer_id
+  LEFT JOIN (SELECT printer_id,COALESCE(SUM(CASE WHEN real_time_min>0 AND result<>'CANCELADO' THEN real_time_min ELSE 0 END),0)/60 AS test_hours FROM tests GROUP BY printer_id) t ON t.printer_id=p.id
+  WHERE p.deleted_at IS NULL AND mp.active=true ORDER BY CASE WHEN mp.next_due_hours IS NOT NULL AND p.total_hours+COALESCE(t.test_hours,0)>=mp.next_due_hours THEN 0 WHEN mp.next_due_date IS NOT NULL AND CURRENT_DATE>=mp.next_due_date THEN 0 ELSE 1 END,p.name,mp.task`))}catch(e){next(e)}});
+router.post('/maintenance/plans',async(req,res,next)=>{try{const b=req.body;const printer=await dbGet(`SELECT p.total_hours + COALESCE(t.test_hours,0) AS current_hours FROM printers p LEFT JOIN (SELECT printer_id,COALESCE(SUM(CASE WHEN real_time_min>0 AND result<>'CANCELADO' THEN real_time_min ELSE 0 END),0)/60 AS test_hours FROM tests GROUP BY printer_id) t ON t.printer_id=p.id WHERE p.id=$1 AND p.deleted_at IS NULL`,[b.printer_id]);if(!printer)return res.status(404).json({error:'Impressora não encontrada'});const ih=b.interval_hours!==''&&b.interval_hours!=null?n(b.interval_hours):null,id=b.interval_days!==''&&b.interval_days!=null?parseInt(b.interval_days):null;const dueHours=b.next_due_hours!==''&&b.next_due_hours!=null?n(b.next_due_hours):(ih!=null?n(printer.current_hours)+ih:null);const dueDate=b.next_due_date||null;if(ih==null&&id==null)return res.status(400).json({error:'Informe intervalo em horas ou dias'});const r=await dbGet(`INSERT INTO maintenance_plans(printer_id,task,interval_hours,interval_days,active,next_due_date,next_due_hours,notes) VALUES($1,$2,$3,$4,$5,CASE WHEN $6 IS NOT NULL THEN $6::date WHEN $4 IS NOT NULL THEN CURRENT_DATE + $4 * INTERVAL '1 day' ELSE NULL END,$7,$8) RETURNING id`,[b.printer_id,b.task,ih,id,b.active!==false,dueDate,dueHours,b.notes||null]);res.json({id:Number(r.id),next_due_hours:dueHours,next_due_date:dueDate})}catch(e){next(e)}});
+router.put('/maintenance/plans/:id',async(req,res,next)=>{try{const b=req.body;const plan=await dbGet('SELECT * FROM maintenance_plans WHERE id=$1',[req.params.id]);if(!plan)return res.status(404).json({error:'Plano não encontrado'});const ih=b.interval_hours!==''&&b.interval_hours!=null?n(b.interval_hours):null,id=b.interval_days!==''&&b.interval_days!=null?parseInt(b.interval_days):null;await dbRun('UPDATE maintenance_plans SET task=$1,interval_hours=$2,interval_days=$3,active=$4,next_due_date=$5,next_due_hours=$6,notes=$7 WHERE id=$8',[b.task,ih,id,b.active!==false,b.next_due_date||null,b.next_due_hours!==''&&b.next_due_hours!=null?n(b.next_due_hours):null,b.notes||null,req.params.id]);res.json({ok:true})}catch(e){next(e)}});
 router.delete('/maintenance/plans/:id',async(req,res,next)=>{try{await dbRun('UPDATE maintenance_plans SET active=false WHERE id=$1',[req.params.id]);res.json({ok:true})}catch(e){next(e)}});
 
 // Materials/filament
@@ -112,7 +142,46 @@ router.post('/settings',async(req,res,next)=>{try{for(const[k,v]of Object.entrie
 router.post('/uploads/:entity/:id',upload.single('image'),async(req,res,next)=>{try{if(!req.file)return res.status(400).json({error:'Imagem não enviada'});if(!cloudReady())return res.status(503).json({error:'Cloudinary não configurado'});const entity=req.params.entity,id=req.params.id,folder=`gestao3d/${entity}`;const r=await uploadBuffer(req.file.buffer,folder);const tables={printers:'printers',parts:'small_parts',consumables:'tool_consumables'};const table=tables[entity];if(!table)return res.status(400).json({error:'Tipo de imagem inválido'});const old=await dbGet(`SELECT cloudinary_public_id FROM ${table} WHERE id=$1`,[id]);await dbRun(`UPDATE ${table} SET photo_url=$1,cloudinary_public_id=$2 WHERE id=$3`,[r.secure_url,r.public_id,id]);if(old?.cloudinary_public_id){try{await cloudinary.uploader.destroy(old.cloudinary_public_id)}catch{}}res.json({url:r.secure_url,public_id:r.public_id})}catch(e){next(e)}});
 
 // Dashboard/reports
-router.get('/dashboard',async(req,res,next)=>{try{const from=req.query.start||new Date(Date.now()-30*864e5).toISOString().slice(0,10),to=req.query.end||today();const revenue=await dbGet(`SELECT COALESCE(SUM(amount),0) total FROM transactions WHERE type='RECEITA' AND date BETWEEN $1 AND $2 AND deleted_at IS NULL`,[from,to]);const expenses=await dbGet(`SELECT COALESCE(SUM(amount),0) total FROM transactions WHERE type='DESPESA' AND date BETWEEN $1 AND $2 AND deleted_at IS NULL`,[from,to]);const ao=await dbGet("SELECT COUNT(*) c FROM orders WHERE status NOT IN ('ENTREGUE','CANCELADO') AND deleted_at IS NULL");const lo=await dbGet('SELECT COUNT(*) c FROM orders WHERE status NOT IN (\'ENTREGUE\',\'CANCELADO\') AND due_date < $1 AND deleted_at IS NULL',[today()]);const ip=await dbGet("SELECT COUNT(*) c FROM production_jobs WHERE status IN ('IMPRIMINDO','PREPARANDO')");const ls=await dbGet('SELECT COUNT(*) c FROM material_rolls WHERE current_weight_g<=min_stock_g AND deleted_at IS NULL');const ts=await dbGet('SELECT COUNT(*) c FROM tool_consumables WHERE current_qty<=min_qty AND deleted_at IS NULL');const ps=await dbGet('SELECT COUNT(*) c FROM small_parts WHERE current_qty<=min_qty AND deleted_at IS NULL');const lp=await dbGet('SELECT COUNT(*) c FROM transactions WHERE paid=false AND due_date<$1 AND deleted_at IS NULL',[today()]);const mn=await dbGet("SELECT COUNT(*) c FROM maintenance_plans mp JOIN printers p ON p.id=mp.printer_id WHERE mp.active=true AND ((mp.next_due_hours IS NOT NULL AND p.total_hours>=mp.next_due_hours-20) OR (mp.next_due_date IS NOT NULL AND CURRENT_DATE>=mp.next_due_date-INTERVAL '7 days'))");const ti=n((await dbGet("SELECT value FROM settings WHERE key='printer_investment'"))?.value);const tr=await dbGet("SELECT COALESCE(SUM(amount),0) total FROM transactions WHERE type='RECEITA' AND deleted_at IS NULL");const roi=ti>0?Math.min(100,n(tr.total)/ti*100).toFixed(1):0;const s=await dbAll('SELECT result,COUNT(*) count,SUM(real_time_min) time_min,SUM(real_weight_g) weight FROM production_jobs GROUP BY result');const totalP=s.reduce((a,b)=>a+n(b.count),0),succ=s.find(x=>x.result==='SUCESSO');res.json({revenue:n(revenue.total),expenses:n(expenses.total),profit:n(revenue.total)-n(expenses.total),active_orders:Number(ao.c),late_orders:Number(lo.c),in_production:Number(ip.c),low_stock:Number(ls.c)+Number(ts.c)+Number(ps.c),late_payments:Number(lp.c),maint_needed:Number(mn.c),roi,print_hours:(s.reduce((a,b)=>a+n(b.time_min),0)/60).toFixed(1),filament_used:s.reduce((a,b)=>a+n(b.weight),0).toFixed(0),success_rate:totalP>0?(n(succ?.count)/totalP*100).toFixed(1):0})}catch(e){next(e)}});
+router.get('/dashboard',async(req,res,next)=>{try{
+ const from=req.query.start||new Date(Date.now()-30*864e5).toISOString().slice(0,10),to=req.query.end||today();
+ const revenue=await dbGet(`SELECT COALESCE(SUM(amount),0) total FROM transactions WHERE type='RECEITA' AND date BETWEEN $1 AND $2 AND deleted_at IS NULL`,[from,to]);
+ const expenses=await dbGet(`SELECT COALESCE(SUM(amount),0) total FROM transactions WHERE type='DESPESA' AND date BETWEEN $1 AND $2 AND deleted_at IS NULL`,[from,to]);
+ const ao=await dbGet("SELECT COUNT(*) c FROM orders WHERE status NOT IN ('ENTREGUE','CANCELADO') AND deleted_at IS NULL");
+ const lo=await dbGet("SELECT COUNT(*) c FROM orders WHERE status NOT IN ('ENTREGUE','CANCELADO') AND due_date < $1 AND deleted_at IS NULL",[today()]);
+ const ip=await dbGet("SELECT COUNT(*) c FROM production_jobs WHERE status IN ('IMPRIMINDO','PREPARANDO')");
+ const ls=await dbGet('SELECT COUNT(*) c FROM material_rolls WHERE current_weight_g<=min_stock_g AND deleted_at IS NULL');
+ const ts=await dbGet('SELECT COUNT(*) c FROM tool_consumables WHERE current_qty<=min_qty AND deleted_at IS NULL');
+ const ps=await dbGet('SELECT COUNT(*) c FROM small_parts WHERE current_qty<=min_qty AND deleted_at IS NULL');
+ const lp=await dbGet('SELECT COUNT(*) c FROM transactions WHERE paid=false AND due_date<$1 AND deleted_at IS NULL',[today()]);
+ const printerTotals=await dbGet(`SELECT COALESCE(SUM(p.total_hours+COALESCE(t.test_hours,0)),0) hours,
+   COALESCE(SUM(p.filament_used_g+COALESCE(t.test_filament,0)),0) filament
+   FROM printers p
+   LEFT JOIN (SELECT printer_id,
+     COALESCE(SUM(CASE WHEN real_time_min>0 AND result<>'CANCELADO' THEN real_time_min ELSE 0 END),0)/60 test_hours,
+     COALESCE(SUM(CASE WHEN real_time_min>0 AND result<>'CANCELADO' THEN COALESCE(real_weight_g,0)+COALESCE(waste_g,0) ELSE 0 END),0) test_filament
+     FROM tests GROUP BY printer_id) t ON t.printer_id=p.id
+   WHERE p.deleted_at IS NULL`);
+ const mn=await dbAll(`SELECT mp.id,mp.task,mp.printer_id,p.name printer_name,
+   p.total_hours+COALESCE(t.test_hours,0) current_hours,mp.next_due_hours,mp.next_due_date,
+   CASE WHEN mp.next_due_hours IS NOT NULL AND p.total_hours+COALESCE(t.test_hours,0)>=mp.next_due_hours THEN 'ATRASADA'
+        WHEN mp.next_due_date IS NOT NULL AND CURRENT_DATE>=mp.next_due_date THEN 'ATRASADA'
+        WHEN mp.next_due_hours IS NOT NULL AND mp.next_due_hours-(p.total_hours+COALESCE(t.test_hours,0))<=${MAINT_WARNING_HOURS} THEN 'PROXIMA'
+        WHEN mp.next_due_date IS NOT NULL AND mp.next_due_date-CURRENT_DATE<=7 THEN 'PROXIMA'
+        ELSE 'EM_DIA' END status,
+   CASE WHEN mp.next_due_hours IS NOT NULL THEN GREATEST(mp.next_due_hours-(p.total_hours+COALESCE(t.test_hours,0)),0) END hours_remaining
+   FROM maintenance_plans mp JOIN printers p ON p.id=mp.printer_id
+   LEFT JOIN (SELECT printer_id,COALESCE(SUM(CASE WHEN real_time_min>0 AND result<>'CANCELADO' THEN real_time_min ELSE 0 END),0)/60 test_hours FROM tests GROUP BY printer_id) t ON t.printer_id=p.id
+   WHERE mp.active=true AND p.deleted_at IS NULL
+   AND ((mp.next_due_hours IS NOT NULL AND p.total_hours+COALESCE(t.test_hours,0)>=mp.next_due_hours-${MAINT_WARNING_HOURS})
+     OR (mp.next_due_date IS NOT NULL AND CURRENT_DATE>=mp.next_due_date-INTERVAL '7 days'))
+   ORDER BY CASE WHEN status='ATRASADA' THEN 0 ELSE 1 END,p.name,mp.task`);
+ const ti=n((await dbGet("SELECT value FROM settings WHERE key='printer_investment'"))?.value);
+ const tr=await dbGet("SELECT COALESCE(SUM(amount),0) total FROM transactions WHERE type='RECEITA' AND deleted_at IS NULL");
+ const roi=ti>0?Math.min(100,n(tr.total)/ti*100).toFixed(1):0;
+ const sj=await dbAll('SELECT result,COUNT(*) count,SUM(real_time_min) time_min,SUM(real_weight_g) weight FROM production_jobs GROUP BY result');
+ const totalP=sj.reduce((a,b)=>a+n(b.count),0),succ=sj.find(x=>x.result==='SUCESSO');
+ res.json({revenue:n(revenue.total),expenses:n(expenses.total),profit:n(revenue.total)-n(expenses.total),active_orders:Number(ao.c),late_orders:Number(lo.c),in_production:Number(ip.c),low_stock:Number(ls.c)+Number(ts.c)+Number(ps.c),late_payments:Number(lp.c),maint_needed:mn.length,maintenance:mn,roi,print_hours:n(printerTotals.hours).toFixed(1),filament_used:n(printerTotals.filament).toFixed(0),success_rate:totalP>0?(n(succ?.count)/totalP*100).toFixed(1):0})
+ }catch(e){next(e)}});
 router.get('/reports/finance',async(req,res,next)=>{try{const from=req.query.start||new Date(Date.now()-30*864e5).toISOString().slice(0,10),to=req.query.end||today();res.json({by_category:await dbAll(`SELECT category,type,SUM(amount) total FROM transactions WHERE date BETWEEN $1 AND $2 AND deleted_at IS NULL GROUP BY category,type ORDER BY total DESC`,[from,to])})}catch(e){next(e)}});
 router.get('/reports/production',async(req,res,next)=>{try{res.json({summary:await dbAll('SELECT result,COUNT(*) count,SUM(real_time_min) time_min,SUM(real_weight_g) weight FROM production_jobs GROUP BY result'),by_printer:await dbAll('SELECT prn.name,COUNT(*) jobs,SUM(pj.real_time_min)/60 hours,SUM(pj.real_weight_g) filament FROM production_jobs pj JOIN printers prn ON prn.id=pj.printer_id GROUP BY prn.id,prn.name')})}catch(e){next(e)}});
 router.get('/reports/products',async(req,res,next)=>{try{res.json(await dbAll(`SELECT p.name,COUNT(o.id) orders,SUM(o.quantity) qty,SUM(o.total) revenue,p.cost_total FROM orders o JOIN products p ON p.id=o.product_id WHERE o.status NOT IN ('CANCELADO','ORCAMENTO') AND o.deleted_at IS NULL GROUP BY p.id,p.name,p.cost_total ORDER BY revenue DESC`))}catch(e){next(e)}});
