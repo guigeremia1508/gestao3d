@@ -293,7 +293,7 @@ router.get('/search',async(req,res,next)=>{try{const q=String(req.query.q||'').t
   ...(await dbAll("SELECT 'Impressora' kind,id,name title,model subtitle,created_at FROM printers WHERE deleted_at IS NULL AND (name ILIKE $1 OR COALESCE(model,'') ILIKE $1 OR COALESCE(serial,'') ILIKE $1) ORDER BY created_at DESC LIMIT 8",[like])).map(x=>({...x,route:'impressoras'})),
 ];res.json(rows.slice(0,20));}catch(e){next(e)}});
 router.get('/notifications',async(req,res,next)=>{try{const [stock,orders,payments,maintenance,failed]=await Promise.all([
- dbAll("SELECT 'ESTOQUE' type,name title,current_weight_g detail FROM material_rolls r JOIN materials m ON m.id=r.material_id WHERE r.deleted_at IS NULL AND current_weight_g<=min_stock_g ORDER BY current_weight_g ASC LIMIT 10"),
+ dbAll("SELECT 'ESTOQUE' type, (m.type || COALESCE(' — '||m.brand,'') || COALESCE(' — '||m.color,'')) title, r.current_weight_g detail FROM material_rolls r JOIN materials m ON m.id=r.material_id WHERE r.deleted_at IS NULL AND r.current_weight_g<=r.min_stock_g ORDER BY r.current_weight_g ASC LIMIT 10"),
  dbAll("SELECT 'PEDIDO_ATRASADO' type,'Pedido #'||id title,COALESCE(due_date::text,'') detail FROM orders WHERE deleted_at IS NULL AND due_date<CURRENT_DATE AND status NOT IN ('ENTREGUE','CANCELADO') ORDER BY due_date LIMIT 10"),
  dbAll("SELECT 'PAGAMENTO_ATRASADO' type,description title,COALESCE(due_date::text,'') detail FROM transactions WHERE deleted_at IS NULL AND paid=false AND due_date<CURRENT_DATE ORDER BY due_date LIMIT 10"),
  dbAll("SELECT 'MANUTENCAO' type,p.name||' — '||mp.task title,COALESCE(mp.next_due_date::text,CASE WHEN mp.next_due_hours IS NOT NULL THEN ROUND(mp.next_due_hours-(p.total_hours+COALESCE(t.test_hours,0)),1)::text||'h' END,'') detail FROM maintenance_plans mp JOIN printers p ON p.id=mp.printer_id LEFT JOIN (SELECT printer_id,COALESCE(SUM(real_time_min)/60,0) test_hours FROM tests WHERE result<>'CANCELADO' GROUP BY printer_id) t ON t.printer_id=p.id WHERE mp.active=true AND ((mp.next_due_date IS NOT NULL AND mp.next_due_date<=CURRENT_DATE+7) OR (mp.next_due_hours IS NOT NULL AND p.total_hours+COALESCE(t.test_hours,0)>=mp.next_due_hours-20)) LIMIT 10"),
@@ -313,14 +313,21 @@ router.get('/dashboard',async(req,res,next)=>{try{
  const ts=await dbGet('SELECT COUNT(*) c FROM tool_consumables WHERE current_qty<=min_qty AND deleted_at IS NULL');
  const ps=await dbGet('SELECT COUNT(*) c FROM small_parts WHERE current_qty<=min_qty AND deleted_at IS NULL');
  const lp=await dbGet('SELECT COUNT(*) c FROM transactions WHERE paid=false AND due_date<$1 AND deleted_at IS NULL',[today()]);
- const printerTotals=await dbGet(`SELECT COALESCE(SUM(p.total_hours+COALESCE(t.test_hours,0)),0) hours,
-   COALESCE(SUM(p.filament_used_g+COALESCE(t.test_filament,0)),0) filament
-   FROM printers p
-   LEFT JOIN (SELECT printer_id,
-     COALESCE(SUM(CASE WHEN real_time_min>0 AND result<>'CANCELADO' THEN real_time_min ELSE 0 END),0)/60 test_hours,
-     COALESCE(SUM(CASE WHEN real_time_min>0 AND result<>'CANCELADO' THEN COALESCE(real_weight_g,0)+COALESCE(waste_g,0) ELSE 0 END),0) test_filament
-     FROM tests GROUP BY printer_id) t ON t.printer_id=p.id
-   WHERE p.deleted_at IS NULL`);
+ const printerTotals=await dbGet(`
+   SELECT
+     COALESCE(SUM(time_min),0) / 60 hours,
+     COALESCE(SUM(filament_g),0) filament
+   FROM (
+     SELECT COALESCE(SUM(t.real_time_min),0) time_min,
+            COALESCE(SUM(COALESCE(t.real_weight_g,0)+COALESCE(t.waste_g,0)),0) filament_g
+     FROM tests t
+     WHERE t.result IN ('APROVADO','REPROVADO') AND t.created_at::date BETWEEN $1 AND $2
+     UNION ALL
+     SELECT COALESCE(SUM(pj.real_time_min),0) time_min,
+            COALESCE(SUM(COALESCE(pj.real_weight_g,0)+COALESCE(pj.waste_g,0)),0) filament_g
+     FROM production_jobs pj
+     WHERE pj.result IN ('SUCESSO','FALHA') AND pj.created_at::date BETWEEN $1 AND $2
+   ) x`,[from,to]);
  const mn=await dbAll(`SELECT mp.id,mp.task,mp.printer_id,p.name printer_name,
    p.total_hours+COALESCE(t.test_hours,0) current_hours,mp.next_due_hours,mp.next_due_date,
    CASE WHEN mp.next_due_hours IS NOT NULL AND p.total_hours+COALESCE(t.test_hours,0)>=mp.next_due_hours THEN 'ATRASADA'
@@ -338,9 +345,24 @@ router.get('/dashboard',async(req,res,next)=>{try{
  const ti=n((await dbGet("SELECT value FROM settings WHERE key='printer_investment'"))?.value);
  const commercialProfit=await dbGet(`SELECT COALESCE(SUM(o.total-(COALESCE(p.cost_total,0)*o.quantity)),0) total FROM orders o JOIN products p ON p.id=o.product_id WHERE o.status NOT IN ('ORCAMENTO','CANCELADO') AND o.deleted_at IS NULL`);
  const recovered=Math.max(0,n(commercialProfit.total)), roi=ti>0?Math.min(100,recovered/ti*100).toFixed(1):0, investmentRemaining=Math.max(0,ti-recovered);
- const sj=await dbAll('SELECT result,COUNT(*) count,SUM(real_time_min) time_min,SUM(real_weight_g) weight FROM production_jobs GROUP BY result');
- const totalP=sj.reduce((a,b)=>a+n(b.count),0),succ=sj.find(x=>x.result==='SUCESSO');
- res.json({revenue:n(revenue.total),expenses:n(expenses.total),profit:n(revenue.total)-n(expenses.total),commercial_profit:recovered,investment:ti,investment_remaining:investmentRemaining,active_orders:Number(ao.c),late_orders:Number(lo.c),in_production:Number(ip.c),low_stock:Number(ls.c)+Number(ts.c)+Number(ps.c),late_payments:Number(lp.c),maint_needed:mn.length,maintenance:mn,roi,print_hours:n(printerTotals.hours).toFixed(1),filament_used:n(printerTotals.filament).toFixed(0),success_rate:totalP>0?(n(succ?.count)/totalP*100).toFixed(1):0})
+ const impressionStats=await dbGet(`
+   SELECT
+     COALESCE(SUM(total_count),0) total_count,
+     COALESCE(SUM(success_count),0) success_count
+   FROM (
+     SELECT COUNT(*)::numeric total_count,
+            COUNT(*) FILTER (WHERE result='APROVADO')::numeric success_count
+     FROM tests
+     WHERE result IN ('APROVADO','REPROVADO') AND created_at::date BETWEEN $1 AND $2
+     UNION ALL
+     SELECT COUNT(*)::numeric total_count,
+            COUNT(*) FILTER (WHERE result='SUCESSO')::numeric success_count
+     FROM production_jobs
+     WHERE result IN ('SUCESSO','FALHA') AND created_at::date BETWEEN $1 AND $2
+   ) stats`,[from,to]);
+ const totalP=n(impressionStats?.total_count),successP=n(impressionStats?.success_count);
+ const successRate=totalP>0?(successP/totalP*100).toFixed(1):'0.0';
+ res.json({revenue:n(revenue.total),expenses:n(expenses.total),profit:n(revenue.total)-n(expenses.total),commercial_profit:recovered,investment:ti,investment_remaining:investmentRemaining,active_orders:Number(ao.c),late_orders:Number(lo.c),in_production:Number(ip.c),low_stock:Number(ls.c)+Number(ts.c)+Number(ps.c),late_payments:Number(lp.c),maint_needed:mn.length,maintenance:mn,roi,print_hours:n(printerTotals.hours).toFixed(1),filament_used:n(printerTotals.filament).toFixed(0),success_rate:successRate,impressions_total:totalP,impressions_success:successP})
  }catch(e){next(e)}});
 router.get('/reports/finance',async(req,res,next)=>{try{const from=req.query.start||new Date(Date.now()-30*864e5).toISOString().slice(0,10),to=req.query.end||today();res.json({by_category:await dbAll(`SELECT category,type,SUM(amount) total FROM transactions WHERE date BETWEEN $1 AND $2 AND deleted_at IS NULL GROUP BY category,type ORDER BY total DESC`,[from,to])})}catch(e){next(e)}});
 router.get('/reports/production',async(req,res,next)=>{try{const from=req.query.start||new Date(Date.now()-30*864e5).toISOString().slice(0,10),to=req.query.end||today();res.json({summary:await dbAll('SELECT result,COUNT(*) count,SUM(real_time_min) time_min,SUM(real_weight_g) weight FROM production_jobs WHERE created_at::date BETWEEN $1 AND $2 GROUP BY result',[from,to]),by_printer:await dbAll('SELECT prn.name,COUNT(*) jobs,SUM(pj.real_time_min)/60 hours,SUM(COALESCE(pj.real_weight_g,0)+COALESCE(pj.waste_g,0)) filament FROM production_jobs pj JOIN printers prn ON prn.id=pj.printer_id WHERE pj.created_at::date BETWEEN $1 AND $2 GROUP BY prn.id,prn.name',[from,to])})}catch(e){next(e)}});

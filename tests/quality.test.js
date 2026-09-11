@@ -71,9 +71,9 @@ test('healthcheck e encerramento limpo existem', () => {
 
 test('autenticação carrega a aplicação antes dos módulos', () => {
   const html = fs.readFileSync(path.join(ROOT, 'frontend/index.html'), 'utf8');
-  assert.ok(html.indexOf('/js/app.js?v=3.2.4') < html.indexOf('/js/modules/dashboard.js?v=3.2.4'));
-  assert.ok(html.indexOf('/js/auth.js?v=3.2.4') < html.indexOf('/js/bootstrap.js?v=3.2.4'));
-  assert.ok(html.includes('/js/bootstrap.js?v=3.2.4'));
+  assert.ok(html.indexOf('/js/app.js?v=3.2.5') < html.indexOf('/js/modules/dashboard.js?v=3.2.5'));
+  assert.ok(html.indexOf('/js/auth.js?v=3.2.5') < html.indexOf('/js/bootstrap.js?v=3.2.5'));
+  assert.ok(html.includes('/js/bootstrap.js?v=3.2.5'));
   const app = fs.readFileSync(path.join(ROOT, 'frontend/js/app.js'), 'utf8');
   assert.ok(!app.includes("API.get('/auth/me')"));
   assert.ok(fs.existsSync(path.join(ROOT, 'frontend/js/bootstrap.js')));
@@ -85,7 +85,28 @@ test('frontend mantém PWA e tratamento responsivo', () => {
   const sw = read('frontend/sw.js');
   assert.match(html, /manifest\.webmanifest/);
   assert.match(css, /@media \(max-width: 768px\)/);
-  assert.match(sw, /gestao3d-v3-2-2-static/);
+  assert.match(sw, /gestao3d-v3-2-5-static/);
+});
+
+
+test('orcamentos não redeclara o helper global esc', () => {
+  const quotes = read('frontend/js/modules/orcamentos.js');
+  assert.equal(/function esc\s*\(/.test(quotes), false);
+  assert.match(quotes, /g3dEscape\(/);
+});
+
+test('notificações usam colunas existentes do estoque', () => {
+  const routes = read('routes/api.js');
+  assert.match(routes, /JOIN materials m ON m\.id=r\.material_id/);
+  assert.match(routes, /m\.type \|\| COALESCE/);
+  assert.doesNotMatch(routes, /SELECT 'ESTOQUE' type,name title/);
+});
+
+test('dashboard calcula taxa de sucesso com testes e produção no período', () => {
+  const routes = read('routes/api.js');
+  assert.match(routes, /result IN \('APROVADO','REPROVADO'\).*created_at::date BETWEEN \$1 AND \$2/s);
+  assert.match(routes, /result IN \('SUCESSO','FALHA'\).*created_at::date BETWEEN \$1 AND \$2/s);
+  assert.match(routes, /successRate=totalP>0/);
 });
 
 test('todos os JavaScript da aplicação têm sintaxe válida', () => {

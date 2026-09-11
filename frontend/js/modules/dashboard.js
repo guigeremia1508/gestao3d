@@ -65,7 +65,7 @@ pageRenderers.dashboard = async function () {
         </div>
       </div>
     </div>
-    <p style="color:var(--text2);font-size:.8rem;margin-top:1rem">Horas e filamento são acumulados das impressoras cadastradas; os demais indicadores seguem o período de 30 dias.</p>
+    <p style="color:var(--text2);font-size:.8rem;margin-top:1rem">Receitas, despesas, horas, filamento e taxa de sucesso de impressões seguem o período selecionado. Pedidos ativos e alertas representam o estado atual da operação.</p>
   `;
 };
 
