@@ -114,3 +114,5 @@ async function openProjetoPecasModal(pid,pname){
 }
 async function addProjetoPeca(pid,pname){const b={part_id:R('pp-part').value,quantity:R('pp-qty').value};if(!b.part_id)return toast('Selecione uma peça','err');try{await API.post(`/projects/${pid}/parts`,b);toast('Peça adicionada e estoque baixado!');openProjetoPecasModal(pid,pname); }catch(e){toast(e.message,'err')}}
 async function removeProjetoPeca(pid,id,pname){if(!confirmAction('Remover a peça e devolver ao estoque?'))return;try{await API.del(`/projects/${pid}/parts/${id}`);toast('Peça devolvida ao estoque');openProjetoPecasModal(pid,pname)}catch(e){toast(e.message,'err')}}
+
+window.openProjetoModal=openProjetoModal;window.saveProjeto=saveProjeto;window.deleteProjeto=deleteProjeto;window.openVersoesModal=openVersoesModal;window.saveVersao=saveVersao;window.openProjetoPecasModal=openProjetoPecasModal;window.addProjetoPeca=addProjetoPeca;window.removeProjetoPeca=removeProjetoPeca;

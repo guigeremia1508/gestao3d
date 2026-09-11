@@ -61,3 +61,5 @@ async function deleteCliente(id) {
   if (!confirmAction('Excluir este cliente?')) return;
   try { await API.del(`/customers/${id}`); toast('Excluído!'); pageRenderers.clientes(); } catch (e) { toast(e.message, 'err'); }
 }
+
+window.openClienteModal=openClienteModal;window.saveCliente=saveCliente;window.deleteCliente=deleteCliente;

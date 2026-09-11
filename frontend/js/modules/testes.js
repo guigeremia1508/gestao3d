@@ -114,3 +114,5 @@ async function saveTeste() {
     closeModal(); toast('Teste salvo! Estoque atualizado.'); pageRenderers.testes();
   } catch (e) { toast(e.message, 'err'); }
 }
+
+window.openTesteModal=openTesteModal;window.toggleFailureFields=toggleFailureFields;window.loadVersionsForTest=loadVersionsForTest;window.saveTeste=saveTeste;

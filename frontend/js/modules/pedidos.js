@@ -117,3 +117,5 @@ async function deletePedido(id) {
   if (!confirmAction('Cancelar este pedido?')) return;
   try { await API.del(`/orders/${id}`); toast('Cancelado!'); pageRenderers.pedidos(); } catch (e) { toast(e.message, 'err'); }
 }
+
+window.openPedidoModal=openPedidoModal;window.savePedido=savePedido;window.deletePedido=deletePedido;window.autofillPrice=autofillPrice;window.calcPedidoTotal=calcPedidoTotal;

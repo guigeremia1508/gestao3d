@@ -119,7 +119,7 @@ async function openPlanModal(pid,pname){
   const mine=plans.filter(p=>Number(p.printer_id)===Number(pid));
   openModal(`📅 Plano Preventivo — ${pname}`,`
     <div class="form-grid" style="margin-bottom:1rem">
-      <div class="form-group span2"><label>Tarefa *</label><input id="mp-task" placeholder="Ex.: Lubrificar eixos"></div>
+      <div class="form-group span2"><label>Manutenção recomendada</label><select id="mp-preset" onchange="applyMaintenancePreset()"><option value="">Personalizada</option><option value="100-inspecao">100h — Inspeção e limpeza básica</option><option value="100-eixos">100h — Verificar eixos, ruídos e movimento</option><option value="250-detalhada">250h — Inspeção detalhada</option><option value="500-lubrificacao">500h — Lubrificação completa preventiva</option><option value="1000-revisao">1000h — Revisão geral profunda</option><option value="2000-completa">2000h — Revisão completa e itens de desgaste</option></select></div><div class="form-group span2"><label>Tarefa *</label><input id="mp-task" placeholder="Ex.: Lubrificar eixos"></div>
       <div class="form-group"><label>A cada horas</label><input type="number" id="mp-hours" placeholder="100" min="0.1" step="0.1"></div>
       <div class="form-group"><label>A cada dias (opcional)</label><input type="number" id="mp-days" placeholder=""></div>
       <div class="form-group"><label>Próxima data (opcional)</label><input type="date" id="mp-nextdate"></div>
@@ -137,6 +137,13 @@ async function openPlanModal(pid,pname){
     </tr>`).join(''):'<tr><td colspan="5" style="color:var(--text2);text-align:center">Nenhum plano.</td></tr>'}</tbody></table>`,
     `<button class="btn btn-secondary" onclick="closeModal()">Fechar</button><button class="btn btn-primary" onclick="savePlan(${pid},'${pname.replaceAll("'","\\'")}')">+ Criar plano</button>`,true);
 }
+function applyMaintenancePreset(){const v=R('mp-preset')?.value;const presets={
+ '100-inspecao':['Inspeção e limpeza básica',100,'Limpar mesa, remover resíduos, verificar ruídos e aperto geral.'],
+ '100-eixos':['Verificar eixos, ruídos e movimento',100,'Verificar folgas, ruídos, movimento dos eixos e aperto das fixações.'],
+ '250-detalhada':['Inspeção detalhada',250,'Inspecionar correias, roldanas, parafusos, mesa, cabos e conectores.'],
+ '500-lubrificacao':['Lubrificação completa preventiva',500,'Lubrificar eixos e pontos recomendados pelo fabricante; revisar movimento.'],
+ '1000-revisao':['Revisão geral profunda',1000,'Revisão completa, desgaste, cabos, ventoinhas, correias, eixos e elementos de fixação.'],
+ '2000-completa':['Revisão completa e itens de desgaste',2000,'Revisão completa e substituição preventiva de componentes de desgaste quando necessário.']};const p=presets[v];if(!p)return;if(R('mp-task'))R('mp-task').value=p[0];if(R('mp-hours'))R('mp-hours').value=p[1];if(R('mp-notes'))R('mp-notes').value=p[2];}
 async function savePlan(pid,pname){
  const b={printer_id:pid,task:R('mp-task').value.trim(),interval_hours:R('mp-hours').value,interval_days:R('mp-days').value,next_due_date:R('mp-nextdate').value,next_due_hours:R('mp-nexthours').value,notes:R('mp-notes').value};
  if(!b.task)return toast('Informe a tarefa','err');
@@ -177,4 +184,4 @@ window.savePlan = savePlan;
 window.syncMaintenancePlanTask = syncMaintenancePlanTask;
 window.editPlan = editPlan;
 window.updatePlan = updatePlan;
-window.deletePlan = deletePlan;
+window.deletePlan = deletePlan;window.applyMaintenancePreset=applyMaintenancePreset;

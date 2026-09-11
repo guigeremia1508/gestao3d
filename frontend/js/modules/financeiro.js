@@ -98,3 +98,5 @@ async function deleteTransacao(id) {
   if (!confirmAction('Excluir esta transação?')) return;
   try { await API.del(`/finance/${id}`); toast('Excluído!'); pageRenderers.financeiro(); } catch (e) { toast(e.message, 'err'); }
 }
+
+window.openTransacaoModal=openTransacaoModal;window.saveTransacao=saveTransacao;window.deleteTransacao=deleteTransacao;window.updateCats=updateCats;

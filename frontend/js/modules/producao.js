@@ -91,3 +91,5 @@ async function saveProdJob(id) {
     closeModal(); toast('Produção atualizada!'); pageRenderers.producao();
   } catch (e) { toast(e.message, 'err'); }
 }
+
+window.openProdJobModal=openProdJobModal;window.saveProdJob=saveProdJob;

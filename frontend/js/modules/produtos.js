@@ -116,3 +116,5 @@ async function deleteProduto(id) {
   if (!confirmAction('Excluir este produto?')) return;
   try { await API.del(`/products/${id}`); toast('Excluído!'); pageRenderers.produtos(); } catch (e) { toast(e.message, 'err'); }
 }
+
+window.openProdutoModal=openProdutoModal;window.saveProduto=saveProduto;window.deleteProduto=deleteProduto;window.calcProduto=calcProduto;

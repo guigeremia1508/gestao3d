@@ -44,6 +44,10 @@ Troque a senha depois do primeiro acesso.
 - Manutenção → consumo: pode baixar consumíveis e peças do estoque no mesmo registro da manutenção, usando transação.
 - Impressoras: foto hospedada no Cloudinary.
 - Dashboard: alerta conjunto para filamentos, consumíveis, peças e manutenções vencidas/próximas.
+- Orçamentos: projeto/cliente/produto podem ficar em branco; é possível calcular horas de projeto + impressão sem cadastrar um projeto.
+- Manutenção preventiva: modelos prontos de 100h, 250h, 500h, 1000h e 2000h, sempre editáveis.
+- Autenticação: sessões revogáveis, logout real no servidor e controle por perfil.
+- Backup: administradores podem baixar e restaurar um backup lógico JSON pelo menu Configurações.
 
 ## 6. Migração do antigo SQLite
 O ZIP recebido não contém um arquivo `gestao3d.db`, então não há dados SQLite antigos disponíveis para copiar automaticamente.

@@ -119,3 +119,5 @@ async function openMovModal() {
     <tbody>${movs.slice(0,50).map(m => `<tr><td>${dateStr(m.created_at)}</td><td>${badge(m.type)}</td><td>${m.reason}</td><td>${m.material_type||'—'} ${m.color||''}</td><td>${num(m.quantity_g,1)}</td><td>${m.notes||'—'}</td></tr>`).join('')}</tbody></table>`,
     `<button class="btn btn-secondary" onclick="closeModal()">Fechar</button>`, true);
 }
+
+window.openMovModal=openMovModal;window.saveMov=saveMov;

@@ -6,9 +6,12 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
-    "import:sqlite": "node scripts/import-sqlite.js"
+    "import:sqlite": "node scripts/import-sqlite.js",
+    "test": "node scripts/self-test.js"
   },
-  "engines": { "node": ">=18" },
+  "engines": {
+    "node": ">=18"
+  },
   "dependencies": {
     "bcryptjs": "^2.4.3",
     "cloudinary": "^2.5.1",

@@ -67,6 +67,11 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+CREATE TABLE IF NOT EXISTS sessions (
+  id BIGSERIAL PRIMARY KEY, user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token_hash TEXT UNIQUE NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  expires_at TIMESTAMPTZ NOT NULL, revoked_at TIMESTAMPTZ
+);
 CREATE TABLE IF NOT EXISTS customers (
   id BIGSERIAL PRIMARY KEY, name TEXT NOT NULL, phone TEXT, email TEXT, city TEXT, notes TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), deleted_at TIMESTAMPTZ
@@ -183,11 +188,13 @@ CREATE TABLE IF NOT EXISTS transactions (
 CREATE TABLE IF NOT EXISTS quotes (
   id BIGSERIAL PRIMARY KEY,
   customer_id BIGINT REFERENCES customers(id) ON DELETE SET NULL,
+  project_id BIGINT REFERENCES projects(id) ON DELETE SET NULL,
   product_id BIGINT REFERENCES products(id) ON DELETE SET NULL,
   printer_id BIGINT REFERENCES printers(id) ON DELETE SET NULL,
   roll_id BIGINT REFERENCES material_rolls(id) ON DELETE SET NULL,
   product_description TEXT NOT NULL,
   quantity INTEGER NOT NULL DEFAULT 1,
+  project_time_min NUMERIC(14,2) NOT NULL DEFAULT 0,
   weight_g NUMERIC(14,2) NOT NULL DEFAULT 0,
   print_time_min NUMERIC(14,2) NOT NULL DEFAULT 0,
   labor_cost NUMERIC(14,2) NOT NULL DEFAULT 0,
@@ -225,6 +232,10 @@ async function initDb() {
   await p.query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS cost_parts NUMERIC(14,2) DEFAULT 0`);
   await p.query(`ALTER TABLE printer_maintenance ADD COLUMN IF NOT EXISTS plan_id BIGINT REFERENCES maintenance_plans(id) ON DELETE SET NULL`);
   await p.query(`ALTER TABLE printer_maintenance ADD COLUMN IF NOT EXISTS hours_at NUMERIC(14,2)`);
+  await p.query(`ALTER TABLE quotes ADD COLUMN IF NOT EXISTS project_id BIGINT REFERENCES projects(id) ON DELETE SET NULL`);
+  await p.query(`ALTER TABLE quotes ADD COLUMN IF NOT EXISTS project_time_min NUMERIC(14,2) NOT NULL DEFAULT 0`);
+  await p.query(`CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id)`);
+  await p.query(`CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at)`);
   const defs = {
     company_name: 'Minha Impressora 3D', labor_cost_hour: '15.00', energy_cost_kwh: '0.75',
     machine_cost_hour: '2.50', maintenance_cost_hour: '0.50', default_min_stock_g: '50', printer_investment: '0',

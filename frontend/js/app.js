@@ -123,7 +123,9 @@ async function doRegister() {
 R('login-pass').addEventListener('keydown', e => e.key === 'Enter' && doLogin());
 R('register-pass-confirm').addEventListener('keydown', e => e.key === 'Enter' && doRegister());
 
-function doLogout() {
+async function doLogout() {
+  const token=API.token;
+  try{if(token) await fetch('/api/auth/logout',{method:'POST',headers:{Authorization:`Bearer ${token}`}})}catch{}
   localStorage.removeItem('g3d_token');
   localStorage.removeItem('g3d_user');
   API.token = null;
