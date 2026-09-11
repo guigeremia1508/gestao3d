@@ -69,6 +69,16 @@ test('healthcheck e encerramento limpo existem', () => {
   assert.match(server, /getPool\(\)\.end\(\)/);
 });
 
+test('autenticação carrega a aplicação antes dos módulos', () => {
+  const html = fs.readFileSync(path.join(ROOT, 'frontend/index.html'), 'utf8');
+  assert.ok(html.indexOf('/js/app.js?v=3.2.4') < html.indexOf('/js/modules/dashboard.js?v=3.2.4'));
+  assert.ok(html.indexOf('/js/auth.js?v=3.2.4') < html.indexOf('/js/bootstrap.js?v=3.2.4'));
+  assert.ok(html.includes('/js/bootstrap.js?v=3.2.4'));
+  const app = fs.readFileSync(path.join(ROOT, 'frontend/js/app.js'), 'utf8');
+  assert.ok(!app.includes("API.get('/auth/me')"));
+  assert.ok(fs.existsSync(path.join(ROOT, 'frontend/js/bootstrap.js')));
+});
+
 test('frontend mantém PWA e tratamento responsivo', () => {
   const html = read('frontend/index.html');
   const css = read('frontend/css/style.css');

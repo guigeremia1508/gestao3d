@@ -60,3 +60,7 @@ Troque a senha de desenvolvimento do compose antes de qualquer uso fora da máqu
 npm run check
 ```
 Depois do deploy, faça um teste real no Railway de login, edição, produção, estoque, upload, backup e restauração.
+
+### Primeiro acesso ADMIN
+
+A aplicação cria automaticamente o primeiro ADMIN somente quando o banco ainda não possui nenhum ADMIN. Para produção, defina `INITIAL_ADMIN_EMAIL` e `INITIAL_ADMIN_PASSWORD` nas Variables do serviço `gestao3d` no Railway. As credenciais não ficam gravadas no código nem no Git. Depois de criado o ADMIN, essas variáveis não alteram usuários existentes.

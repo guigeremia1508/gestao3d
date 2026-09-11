@@ -223,15 +223,7 @@ function closeSearch(){const box=R('global-search-results');if(box)box.innerHTML
 async function globalSearch(q){clearTimeout(globalSearchTimer);const box=R('global-search-results');if(!box)return;if(String(q||'').trim().length<2){box.innerHTML='';return;}globalSearchTimer=setTimeout(async()=>{try{const rows=await API.get('/search?q='+encodeURIComponent(q.trim()));box.innerHTML=rows.length?rows.map(x=>`<button class=\"search-result\" onclick=\"navigate('\${esc(x.route)}\');closeSearch();R('global-search').value=''\"><strong>${esc(x.kind)} · ${esc(x.title)}</strong><span>${esc(x.subtitle||'')}</span></button>`).join(''):'<div class=\"search-empty\">Nenhum resultado.</div>';}catch(e){box.innerHTML=`<div class=\"search-empty\">${esc(e.message)}</div>`}},180);}
 async function openNotifications(){try{const rows=await API.get('/notifications');refreshNotificationCount();openModal('🔔 Notificações',rows.length?`<div class=\"alerts\">${rows.map(x=>`<div class=\"alert ${x.type.includes('ATRASADO')||x.type.includes('FALHOU')?'danger':'warn'}\"><strong>${esc(x.title)}</strong><span>${esc(x.detail||'')}</span></div>`).join('')}</div>`:'<div style=\"padding:1rem;color:var(--text2)\">Tudo em ordem. Milagre estatístico.</div>',`<button class=\"btn btn-secondary\" onclick=\"closeModal()\">Fechar</button>`,true);}catch(e){toast(e.message,'err')}}
 window.globalSearch=globalSearch;window.closeSearch=closeSearch;window.openNotifications=openNotifications;
-// ─── BOOT ─────────────────────────────────────────────────────────────────────
-(async function boot(){
-  initTheme(); updateTopbarClock();
-  if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(()=>{});
-  try {
-      const session = await API.get('/auth/me');
-    if(session){ localStorage.setItem('g3d_user',JSON.stringify(session)); startApp(session); } else window.showLogin?.();
-  } catch { localStorage.removeItem('g3d_user'); window.showLogin?.(); }
-})();
+// Application boot is handled by frontend/js/bootstrap.js after all modules are loaded.
 
 // Theme is also initialized before login so the preference is preserved.
 initTheme();

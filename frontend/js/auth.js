@@ -182,8 +182,8 @@
 
     loginForm?.addEventListener('submit', doLogin);
     registerForm?.addEventListener('submit', doRegister);
-    loginButton?.addEventListener('click', doLogin);
-    registerButton?.addEventListener('click', doRegister);
+    if (!loginForm?.matches('form')) loginButton?.addEventListener('click', doLogin);
+    if (!registerForm?.matches('form')) registerButton?.addEventListener('click', doRegister);
     registerLink?.addEventListener('click', (event) => {
       event.preventDefault();
       showRegister();
