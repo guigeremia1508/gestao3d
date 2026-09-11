@@ -1,71 +1,27 @@
-# 🖨️ Gestão 3D 2.0 — Railway + PostgreSQL + Cloudinary
+# Gestão 3D 2.1
 
-Esta versão troca o SQLite temporário pelo PostgreSQL e adiciona estoque de ferramentas/consumíveis, parafusos/peças, manutenção preventiva e fotos em nuvem.
+Sistema web para gestão de uma pequena operação de impressão 3D, com PostgreSQL, autenticação por sessão, estoque, projetos, testes, produtos, pedidos, produção, financeiro, manutenção, relatórios e backups.
 
-## 1. Railway — banco PostgreSQL
-No projeto do Railway, adicione um serviço PostgreSQL. O Railway deve disponibilizar `DATABASE_URL` para a aplicação; confira em **Variables**.
+## Rodar localmente
+1. Instale Node.js 20+ e PostgreSQL.
+2. Copie `.env.example` para `.env` e preencha `DATABASE_URL`.
+3. Rode `npm install`.
+4. Rode `npm run check`.
+5. Rode `npm start`.
+6. Abra `http://localhost:3000`.
 
-A aplicação cria as tabelas automaticamente ao iniciar. Não é necessário rodar SQL manualmente para um banco novo.
+Em um banco vazio de produção, defina `INITIAL_ADMIN_EMAIL` e `INITIAL_ADMIN_PASSWORD` antes do primeiro start. O projeto não cria mais a senha `admin123` automaticamente.
 
-### Variáveis recomendadas
-```env
-DATABASE_URL=...        # fornecida pelo PostgreSQL do Railway
-JWT_SECRET=uma-chave-grande-e-secreta
-INVITE_CODE=seu-codigo
-CLOUDINARY_CLOUD_NAME=...
-CLOUDINARY_API_KEY=...
-CLOUDINARY_API_SECRET=...
-```
+## Deploy Railway
+Use **um único serviço público** para a aplicação web. O PostgreSQL continua como serviço de banco. Um serviço/cron privado separado para backup pode continuar existindo, mas não é necessário criar outro site público.
 
-As variáveis do Cloudinary são opcionais para o restante do sistema, mas necessárias para enviar fotos.
+Variáveis principais: `NODE_ENV=production`, `DATABASE_URL` (fornecida pelo serviço PostgreSQL), `INITIAL_ADMIN_EMAIL`/`INITIAL_ADMIN_PASSWORD` somente quando ainda não existir ADMIN, `INVITE_CODE`, `CLOUDINARY_*` e um `JWT_SECRET` forte para compatibilidade legada.
 
-## 2. Cloudinary
-Crie uma conta Cloudinary e informe as três variáveis acima no Railway. As imagens são enviadas para pastas `gestao3d/printers`, `gestao3d/parts` e `gestao3d/consumables`.
+## Segurança
+A autenticação nova usa cookie `HttpOnly` + `Secure` em produção + `SameSite=Lax`, token CSRF separado e sessões revogáveis no PostgreSQL. Senhas novas são armazenadas com Argon2id; senhas legadas em bcrypt são migradas após login válido.
 
-## 3. Instalar e iniciar
-```bash
-npm install
-npm start
-```
+## Backup
+O painel administrativo mantém exportação/restauração lógica em JSON. Sessões nunca entram no backup e são limpas durante uma restauração. O backup automático da hospedagem pode permanecer como camada adicional.
 
-## 4. Login inicial
-- E-mail: `admin@gestao3d.com`
-- Senha: `admin123`
-
-Troque a senha depois do primeiro acesso.
-
-## 5. O que foi adicionado
-- PostgreSQL como banco principal, com criação automática do schema.
-- Ferramentas & Consumíveis: quantidade, mínimo, alerta, custo, movimentações e foto.
-- Parafusos & Peças: tipo/tamanho/material, estoque, custo, movimentações e foto.
-- Projeto → Peças: ao adicionar uma peça, o estoque é baixado imediatamente; ao remover, a peça volta para o estoque.
-- Produtos: o custo das peças do projeto entra automaticamente em `cost_parts` e no custo total/margem/markup.
-- Manutenção preventiva: planos por horas e/ou dias, próxima revisão, histórico e registro das horas da impressora.
-- Manutenção → consumo: pode baixar consumíveis e peças do estoque no mesmo registro da manutenção, usando transação.
-- Impressoras: foto hospedada no Cloudinary.
-- Dashboard: alerta conjunto para filamentos, consumíveis, peças e manutenções vencidas/próximas.
-- Orçamentos: projeto/cliente/produto podem ficar em branco; é possível calcular horas de projeto + impressão sem cadastrar um projeto.
-- Manutenção preventiva: modelos prontos de 100h, 250h, 500h, 1000h e 2000h, sempre editáveis.
-- Autenticação: sessões revogáveis, logout real no servidor e controle por perfil.
-- Backup: administradores podem baixar e restaurar um backup lógico JSON pelo menu Configurações.
-
-## 6. Migração do antigo SQLite
-O ZIP recebido não contém um arquivo `gestao3d.db`, então não há dados SQLite antigos disponíveis para copiar automaticamente.
-
-Se você tiver uma cópia do antigo banco SQLite, coloque o arquivo como `gestao3d.db` na raiz e rode:
-```bash
-npm install
-npm run import:sqlite -- ./gestao3d.db
-```
-
-Para um ambiente Railway que já tenha dados antigos somente no `/tmp` do container anterior, esses dados não podem ser recuperados pelo novo deploy sem uma exportação prévia.
-
-## 7. Railway Deploy
-Depois de substituir os arquivos no VS Code:
-```bash
-git add .
-git commit -m "feat: migrar para PostgreSQL e adicionar estoque e manutenção"
-git push
-```
-
-No Railway, confirme `DATABASE_URL` e as variáveis do Cloudinary. O comando de start é `node server.js` via `npm start`.
+## Testes
+`npm run check` executa o self-test estrutural. Em produção, faça também um login real e teste criação/edição de projeto, atualização de produção, movimento de estoque, backup e restauração em uma janela segura.

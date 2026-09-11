@@ -46,7 +46,7 @@ function renderFinanceiro(filter = '') {
 }
 
 function openTransacaoModal(id) {
-  const t = id ? _financeiro.find(x => x.id === id) : {};
+  const t = id ? _financeiro.find(x => Number(x.id) === Number(id)) : {};
   const cats = { RECEITA: ['Venda','Serviço','Outro'], DESPESA: ['Filamento','Energia','Manutenção','Ferramentas','Embalagens','Frete','Outro'], INVESTIMENTO: ['Impressora','Equipamento','Estrutura','Outro'] };
   openModal(id ? 'Editar Transação' : 'Nova Transação', `
     <div class="form-grid">

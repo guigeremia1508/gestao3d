@@ -35,7 +35,7 @@ function renderClientes(filter = '') {
 }
 
 function openClienteModal(id) {
-  const c = id ? _clientes.find(x => x.id === id) : {};
+  const c = id ? _clientes.find(x => Number(x.id) === Number(id)) : {};
   openModal(id ? 'Editar Cliente' : 'Novo Cliente', `
     <div class="form-grid">
       <div class="form-group span2"><label>Nome *</label><input id="cf-name" value="${c.name||''}"></div>

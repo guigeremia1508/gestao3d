@@ -35,7 +35,7 @@ function renderProducao() {
 }
 
 function openProdJobModal(id) {
-  const j = _producao.find(x => x.id === id) || {};
+  const j = _producao.find(x => Number(x.id) === Number(id)) || {};
   openModal(`Ordem de Produção #${id}`, `
     <div class="form-grid">
       <div class="form-group"><label>Impressora</label>

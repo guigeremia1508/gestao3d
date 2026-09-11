@@ -37,7 +37,7 @@ function renderProjetos(filter = '') {
 }
 
 function openProjetoModal(id) {
-  const p = id ? _projetos.find(x => x.id === id) : {};
+  const p = id ? _projetos.find(x => Number(x.id) === Number(id)) : {};
   const tipos = ['COMERCIAL','PESSOAL','PROTOTIPO','ESCOLAR','ROBOTICA','EXPERIMENTAL'];
   const statuses = ['EM_DESENVOLVIMENTO','EM_TESTE','APROVADO','EM_PRODUCAO','ARQUIVADO'];
   openModal(id ? 'Editar Projeto' : 'Novo Projeto', `

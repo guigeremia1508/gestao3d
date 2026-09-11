@@ -39,7 +39,7 @@ function renderPedidos(filter = '') {
 }
 
 function openPedidoModal(id) {
-  const o = id ? _pedidos.find(x => x.id === id) : {};
+  const o = id ? _pedidos.find(x => Number(x.id) === Number(id)) : {};
   openModal(id ? 'Editar Pedido' : 'Novo Pedido', `
     <div class="form-grid">
       <div class="form-group"><label>Cliente *</label>

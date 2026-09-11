@@ -17,9 +17,9 @@ async function loadRelatorios() {
     API.get('/reports/products')
   ]);
 
-  const totalRec = fin.by_category.filter(c=>c.type==='RECEITA').reduce((a,b)=>a+b.total,0);
-  const totalDesp = fin.by_category.filter(c=>c.type==='DESPESA').reduce((a,b)=>a+b.total,0);
-  const totalProd = prod.summary.reduce((a,b)=>a+b.count,0);
+  const totalRec = fin.by_category.filter(c=>c.type==='RECEITA').reduce((a,b)=>a+Number(b.total||0),0);
+  const totalDesp = fin.by_category.filter(c=>c.type==='DESPESA').reduce((a,b)=>a+Number(b.total||0),0);
+  const totalProd = prod.summary.reduce((a,b)=>a+Number(b.count||0),0);
   const succProd = prod.summary.find(s=>s.result==='SUCESSO');
   const failProd = prod.summary.find(s=>s.result==='FALHA');
 

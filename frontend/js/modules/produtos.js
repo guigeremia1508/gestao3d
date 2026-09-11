@@ -38,7 +38,7 @@ function renderProdutos(filter = '') {
 }
 
 function openProdutoModal(id) {
-  const p = id ? _produtos.find(x => x.id === id) : {};
+  const p = id ? _produtos.find(x => Number(x.id) === Number(id)) : {};
   openModal(id ? 'Editar Produto' : 'Novo Produto', `
     <div class="form-grid">
       <div class="form-group"><label>Código</label><input id="prod-code" value="${p.code||''}"></div>

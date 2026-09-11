@@ -62,12 +62,7 @@ function showRegister() {
   R('register-name').focus();
 }
 
-function saveSession(data) {
-  API.token = data.token;
-  localStorage.setItem('g3d_token', data.token);
-  localStorage.setItem('g3d_user', JSON.stringify(data.user));
-  startApp(data.user);
-}
+function saveSession(data) { API.csrfToken = data.csrfToken || API.csrfToken; localStorage.setItem('g3d_user', JSON.stringify(data.user)); startApp(data.user); }
 
 async function doLogin() {
   const email = R('login-email').value.trim();
@@ -75,8 +70,9 @@ async function doLogin() {
   const err = R('login-error');
   err.style.display = 'none';
   try {
+    const csrf = await API.ensureCsrf();
     const data = await fetch('/api/auth/login', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      method: 'POST', credentials:'same-origin', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
       body: JSON.stringify({ email, password: pass })
     }).then(async r => {
       const json = await r.json().catch(() => ({}));
@@ -105,8 +101,9 @@ async function doRegister() {
   }
 
   try {
+    const csrf = await API.ensureCsrf();
     const data = await fetch('/api/auth/register', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      method: 'POST', credentials:'same-origin', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
       body: JSON.stringify({ name, email, password, invite: R('register-invite').value.trim() })
     }).then(async r => {
       const json = await r.json().catch(() => ({}));
@@ -124,14 +121,9 @@ R('login-pass').addEventListener('keydown', e => e.key === 'Enter' && doLogin())
 R('register-pass-confirm').addEventListener('keydown', e => e.key === 'Enter' && doRegister());
 
 async function doLogout() {
-  const token=API.token;
-  try{if(token) await fetch('/api/auth/logout',{method:'POST',headers:{Authorization:`Bearer ${token}`}})}catch{}
-  localStorage.removeItem('g3d_token');
-  localStorage.removeItem('g3d_user');
-  API.token = null;
-  R('app').style.display = 'none';
-  R('login-screen').style.display = 'flex';
-  showLogin();
+  try { if (API.csrfToken || document.cookie.includes('g3d_csrf=')) await API.post('/auth/logout'); } catch {}
+  localStorage.removeItem('g3d_user'); API.csrfToken=null;
+  R('app').style.display='none'; R('login-screen').style.display='flex'; showLogin();
 }
 
 function initTheme() {
@@ -267,10 +259,14 @@ function closeSidebar() {
 }
 
 // ─── BOOT ─────────────────────────────────────────────────────────────────────
-const saved = localStorage.getItem('g3d_user');
-if (saved && API.token) {
-  try { startApp(JSON.parse(saved)); } catch { doLogout(); }
-}
+(async function boot(){
+  initTheme(); updateTopbarClock();
+  try {
+    API.csrfToken = (await API.ensureCsrf()) || null;
+    const session = await API.get('/auth/me');
+    if(session){ localStorage.setItem('g3d_user',JSON.stringify(session)); startApp(session); } else showLogin();
+  } catch { localStorage.removeItem('g3d_user'); showLogin(); }
+})();
 
 // Theme is also initialized before login so the preference is preserved.
 initTheme();

@@ -1,5 +1,6 @@
 const { Pool } = require('pg');
 const bcrypt = require('bcryptjs');
+const argon2 = require('argon2');
 
 let pool;
 
@@ -143,14 +144,23 @@ CREATE TABLE IF NOT EXISTS projects (
 CREATE TABLE IF NOT EXISTS project_versions (
   id BIGSERIAL PRIMARY KEY, project_id BIGINT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
   version TEXT NOT NULL, filename TEXT, changes TEXT, reason TEXT, result TEXT, author TEXT,
+  file_storage_key TEXT, file_size BIGINT, file_mime TEXT, file_hash TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE TABLE IF NOT EXISTS project_parts (
   id BIGSERIAL PRIMARY KEY, project_id BIGINT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  deleted_at TIMESTAMPTZ,
   part_id BIGINT NOT NULL REFERENCES small_parts(id), quantity NUMERIC(14,3) NOT NULL,
   unit_cost NUMERIC(14,4) NOT NULL DEFAULT 0, total_cost NUMERIC(14,4) NOT NULL DEFAULT 0,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+CREATE TABLE IF NOT EXISTS audit_logs (
+  id BIGSERIAL PRIMARY KEY, user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+  action TEXT NOT NULL, entity TEXT NOT NULL, entity_id BIGINT, ip INET,
+  result TEXT NOT NULL DEFAULT 'SUCCESS', created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_user ON audit_logs(user_id);
 CREATE TABLE IF NOT EXISTS tests (
   id BIGSERIAL PRIMARY KEY, project_id BIGINT NOT NULL REFERENCES projects(id), version_id BIGINT REFERENCES project_versions(id),
   printer_id BIGINT REFERENCES printers(id), roll_id BIGINT REFERENCES material_rolls(id), est_time_min NUMERIC(14,2), real_time_min NUMERIC(14,2),
@@ -243,9 +253,28 @@ async function initDb() {
   for (const [k, v] of Object.entries(defs)) {
     await p.query(`INSERT INTO settings (key,value) VALUES ($1,$2) ON CONFLICT (key) DO NOTHING`, [k, v]);
   }
-  const admin = await dbGet('SELECT id FROM users WHERE email=$1', ['admin@gestao3d.com']);
+  await p.query(`CREATE TABLE IF NOT EXISTS audit_logs (
+    id BIGSERIAL PRIMARY KEY, user_id BIGINT REFERENCES users(id) ON DELETE SET NULL, action TEXT NOT NULL,
+    entity TEXT NOT NULL, entity_id BIGINT, ip INET, result TEXT NOT NULL DEFAULT 'SUCCESS', created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`);
+  await p.query('ALTER TABLE project_parts ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ');
+  await p.query('ALTER TABLE project_versions ADD COLUMN IF NOT EXISTS file_storage_key TEXT');
+  await p.query('ALTER TABLE project_versions ADD COLUMN IF NOT EXISTS file_size BIGINT');
+  await p.query('ALTER TABLE project_versions ADD COLUMN IF NOT EXISTS file_mime TEXT');
+  await p.query('ALTER TABLE project_versions ADD COLUMN IF NOT EXISTS file_hash TEXT');
+  await p.query('CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at)');
+  await p.query('CREATE INDEX IF NOT EXISTS idx_audit_logs_user ON audit_logs(user_id)');
+
+  const admin = await dbGet("SELECT id FROM users WHERE role='ADMIN' AND deleted_at IS NULL LIMIT 1");
   if (!admin) {
-    await dbRun('INSERT INTO users (name,email,password,role) VALUES ($1,$2,$3,$4)', ['Administrador', 'admin@gestao3d.com', bcrypt.hashSync('admin123', 10), 'ADMIN']);
+    const email = process.env.INITIAL_ADMIN_EMAIL;
+    const password = process.env.INITIAL_ADMIN_PASSWORD;
+    if (process.env.NODE_ENV === 'production' && (!email || !password)) {
+      throw new Error('Banco sem ADMIN. Defina INITIAL_ADMIN_EMAIL e INITIAL_ADMIN_PASSWORD no ambiente antes do primeiro deploy.');
+    }
+    if (email && password) {
+      await dbRun('INSERT INTO users (name,email,password,role) VALUES ($1,$2,$3,$4)', ['Administrador', String(email).trim().toLowerCase(), await argon2.hash(String(password), {type:argon2.argon2id}), 'ADMIN']);
+    }
   }
   console.log('✅ PostgreSQL inicializado');
 }
