@@ -68,27 +68,37 @@ function showRegister() {
   R('register-name').focus();
 }
 
-function saveSession(data) { API.csrfToken = data.csrfToken || API.csrfToken; localStorage.setItem('g3d_user', JSON.stringify(data.user)); startApp(data.user); }
+function saveSession(data) {
+  API.csrfToken = data?.csrfToken || null;
+  if (data?.user) localStorage.setItem('g3d_user', JSON.stringify(data.user));
+  if (data?.user) startApp(data.user);
+}
 
 async function doLogin() {
   const email = R('login-email').value.trim();
   const pass = R('login-pass').value;
   const err = R('login-error');
+  const button = document.querySelector('#login-form button.btn-primary');
   err.style.display = 'none';
+  if (!email || !pass) { err.textContent = 'Informe o e-mail e a senha.'; err.style.display = 'block'; return; }
+  if (button) { button.disabled = true; button.dataset.originalText = button.textContent; button.textContent = 'Entrando...'; }
   try {
-    const csrf = await API.ensureCsrf();
+    // Login/cadastro não dependem de CSRF porque ainda não existe sessão autenticada.
+    // O CSRF é emitido pelo próprio endpoint e passa a proteger as operações seguintes.
     const data = await fetch('/api/auth/login', {
-      method: 'POST', credentials:'same-origin', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+      method: 'POST', credentials:'same-origin', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password: pass })
     }).then(async r => {
       const json = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(json.error || 'Erro ao entrar');
+      if (!r.ok) throw new Error(json.error || `Erro ao entrar (${r.status})`);
       return json;
     });
     saveSession(data);
   } catch (e) {
-    err.textContent = e.message;
+    err.textContent = e.message || 'Não foi possível entrar.';
     err.style.display = 'block';
+  } finally {
+    if (button) { button.disabled = false; button.textContent = button.dataset.originalText || 'Entrar'; }
   }
 }
 
@@ -107,13 +117,12 @@ async function doRegister() {
   }
 
   try {
-    const csrf = await API.ensureCsrf();
     const data = await fetch('/api/auth/register', {
-      method: 'POST', credentials:'same-origin', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+      method: 'POST', credentials:'same-origin', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name, email, password, invite: R('register-invite').value.trim() })
     }).then(async r => {
       const json = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(json.error || 'Erro ao criar conta');
+      if (!r.ok) throw new Error(json.error || `Erro ao criar conta (${r.status})`);
       return json;
     });
     saveSession(data);
@@ -125,6 +134,10 @@ async function doRegister() {
 
 R('login-pass').addEventListener('keydown', e => e.key === 'Enter' && doLogin());
 R('register-pass-confirm').addEventListener('keydown', e => e.key === 'Enter' && doRegister());
+
+// The login screen uses inline onclick handlers. Expose the handlers explicitly
+// so they remain reliable across browser execution contexts and future refactors.
+Object.assign(window, { showLogin, showRegister, doLogin, doRegister });
 
 async function doLogout() {
   try { if (API.csrfToken || document.cookie.includes('g3d_csrf=')) await API.post('/auth/logout'); } catch {}
@@ -294,8 +307,7 @@ window.globalSearch=globalSearch;window.closeSearch=closeSearch;window.openNotif
   initTheme(); updateTopbarClock();
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(()=>{});
   try {
-    API.csrfToken = (await API.ensureCsrf()) || null;
-    const session = await API.get('/auth/me');
+      const session = await API.get('/auth/me');
     if(session){ localStorage.setItem('g3d_user',JSON.stringify(session)); startApp(session); } else showLogin();
   } catch { localStorage.removeItem('g3d_user'); showLogin(); }
 })();
