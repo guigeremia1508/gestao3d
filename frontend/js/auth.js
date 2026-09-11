@@ -23,61 +23,89 @@
   }
 
   function showLogin() {
-    $('register-form').style.display = 'none';
-    $('login-form').style.display = 'grid';
+    const register = $('register-form');
+    const login = $('login-form');
+    if (register) register.style.display = 'none';
+    if (login) login.style.display = 'grid';
     setError('register-error', '');
   }
 
   function showRegister() {
-    $('login-form').style.display = 'none';
-    $('register-form').style.display = 'grid';
+    const login = $('login-form');
+    const register = $('register-form');
+    if (login) login.style.display = 'none';
+    if (register) register.style.display = 'grid';
     setError('login-error', '');
     $('register-name')?.focus();
+  }
+
+  async function parseResponse(response) {
+    const raw = await response.text();
+    let data = {};
+    try {
+      data = raw ? JSON.parse(raw) : {};
+    } catch {
+      throw new Error('O servidor retornou uma resposta inválida.');
+    }
+    return data;
   }
 
   async function requestAuth(path, payload) {
     const response = await fetch('/api/auth/' + path, {
       method: 'POST',
-      credentials: 'same-origin',
-      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      },
       body: JSON.stringify(payload)
     });
 
-    const raw = await response.text();
-    let data = {};
-    try { data = raw ? JSON.parse(raw) : {}; } catch {
-      throw new Error('O servidor retornou uma resposta inválida.');
-    }
-
+    const data = await parseResponse(response);
     if (!response.ok) {
-      const message = data.error || `Não foi possível concluir a operação (${response.status}).`;
-      throw new Error(message);
+      throw new Error(data.error || `Não foi possível concluir a operação (${response.status}).`);
     }
-
-    if (!data?.user) throw new Error('O servidor não retornou os dados da sessão.');
+    if (!data?.user) {
+      throw new Error('O servidor não confirmou a sessão de usuário.');
+    }
     return data;
   }
 
-  function finishLogin(data) {
-    try {
-      if (window.API) window.API.csrfToken = data.csrfToken || null;
-      localStorage.setItem('g3d_user', JSON.stringify(data.user));
-    } catch {}
+  async function confirmSession(data) {
+    if (window.API) window.API.csrfToken = data.csrfToken || null;
 
-    if (typeof window.startApp === 'function') {
-      window.startApp(data.user);
-      return;
+    // Confirm the browser can actually use the session cookie that the server
+    // just created. This prevents a successful login from immediately falling
+    // back to the login screen because the cookie was not persisted.
+    const response = await fetch('/api/auth/me', {
+      method: 'GET',
+      credentials: 'include',
+      headers: { 'Accept': 'application/json' },
+      cache: 'no-store'
+    });
+
+    const session = await parseResponse(response);
+    if (!response.ok || !session?.id) {
+      throw new Error('Login aceito, mas a sessão não foi mantida pelo navegador. Verifique os cookies do site e tente novamente.');
     }
 
-    // app.js should normally already be loaded because this script appears first,
-    // but keep a safe fallback instead of failing silently.
-    window.setTimeout(() => {
-      if (typeof window.startApp === 'function') window.startApp(data.user);
-      else window.location.reload();
-    }, 0);
+    const user = session;
+    localStorage.setItem('g3d_user', JSON.stringify(user));
+    return user;
   }
 
-  async function doLogin() {
+  async function finishLogin(data) {
+    const user = await confirmSession(data);
+
+    if (typeof window.startApp !== 'function') {
+      throw new Error('A interface principal não foi carregada. Recarregue a página e tente novamente.');
+    }
+
+    window.startApp(user);
+  }
+
+  async function doLogin(event) {
+    event?.preventDefault();
     const email = String($('login-email')?.value || '').trim();
     const password = String($('login-pass')?.value || '');
     const button = document.querySelector('#login-form button.btn-primary');
@@ -91,15 +119,20 @@
     setBusy(button, true, 'Entrando...');
     try {
       const data = await requestAuth('login', { email, password });
-      finishLogin(data);
+      await finishLogin(data);
     } catch (error) {
+      // Keep the e-mail so the user does not have to type it again. Passwords
+      // are deliberately cleared after any failed authentication attempt.
+      const pass = $('login-pass');
+      if (pass) pass.value = '';
       setError('login-error', error?.message || 'Não foi possível entrar.');
     } finally {
       setBusy(button, false);
     }
   }
 
-  async function doRegister() {
+  async function doRegister(event) {
+    event?.preventDefault();
     const name = String($('register-name')?.value || '').trim();
     const email = String($('register-email')?.value || '').trim();
     const password = String($('register-pass')?.value || '');
@@ -124,8 +157,10 @@
     setBusy(button, true, 'Criando conta...');
     try {
       const data = await requestAuth('register', { name, email, password, invite });
-      finishLogin(data);
+      await finishLogin(data);
     } catch (error) {
+      $('register-pass') && ( $('register-pass').value = '' );
+      $('register-pass-confirm') && ( $('register-pass-confirm').value = '' );
       setError('register-error', error?.message || 'Não foi possível criar a conta.');
     } finally {
       setBusy(button, false);
@@ -138,22 +173,31 @@
   window.doRegister = doRegister;
 
   document.addEventListener('DOMContentLoaded', () => {
-    $('login-pass')?.addEventListener('keydown', (event) => {
-      if (event.key === 'Enter') doLogin();
-    });
-    $('register-pass-confirm')?.addEventListener('keydown', (event) => {
-      if (event.key === 'Enter') doRegister();
-    });
-
-    // Replace fragile inline handlers with real event listeners.
+    const loginForm = $('login-form');
+    const registerForm = $('register-form');
     const loginButton = document.querySelector('#login-form button.btn-primary');
     const registerLink = document.querySelector('#login-form .auth-link');
     const registerButton = document.querySelector('#register-form button.btn-primary');
     const backLink = document.querySelector('#register-form .auth-link');
 
+    loginForm?.addEventListener('submit', doLogin);
+    registerForm?.addEventListener('submit', doRegister);
     loginButton?.addEventListener('click', doLogin);
-    registerLink?.addEventListener('click', showRegister);
     registerButton?.addEventListener('click', doRegister);
-    backLink?.addEventListener('click', showLogin);
+    registerLink?.addEventListener('click', (event) => {
+      event.preventDefault();
+      showRegister();
+    });
+    backLink?.addEventListener('click', (event) => {
+      event.preventDefault();
+      showLogin();
+    });
+
+    $('login-pass')?.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') doLogin(event);
+    });
+    $('register-pass-confirm')?.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') doRegister(event);
+    });
   });
 })();

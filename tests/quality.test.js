@@ -8,6 +8,16 @@ const { calculateQuoteCosts, calculateOrderTotal } = require('../utils/business'
 const ROOT = path.resolve(__dirname, '..');
 const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
 
+
+test('autenticação não usa fallback de reload e expõe startApp', () => {
+  const auth = read('frontend/js/auth.js');
+  const app = read('frontend/js/app.js');
+  assert.doesNotMatch(auth, /window\.location\.reload\(\)/);
+  assert.match(auth, /credentials:\s*['"]include['"]/);
+  assert.match(auth, /\/api\/auth\/me/);
+  assert.match(app, /window\.startApp\s*=\s*startApp/);
+});
+
 test('calcula orçamento por markup corretamente', () => {
   const r = calculateQuoteCosts({quantity:2,weight_g:50,print_time_min:60,project_time_min:120,labor_extra:5,cost_per_gram:.12,power_watts:200,energy_cost_kwh:.75,machine_cost_hour:2.5,maintenance_cost_hour:.5,labor_cost_hour:15,price_mode:'markup',markup_percent:50});
   assert.equal(r.qty,2);

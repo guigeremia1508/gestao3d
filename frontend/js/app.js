@@ -169,6 +169,9 @@ function startApp(user) {
   navigate(user.role === 'CLIENTE' ? 'pedidos' : 'dashboard');
 }
 
+// Expose the entry point explicitly for the authentication module.
+window.startApp = startApp;
+
 // ─── NAVIGATION ───────────────────────────────────────────────────────────────
 const pageRenderers = window.pageRenderers || (window.pageRenderers = {});
 let currentPage = '';

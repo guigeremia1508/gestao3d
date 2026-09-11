@@ -21,7 +21,8 @@ function secureCookie() { return process.env.NODE_ENV === 'production' ? '; Secu
 function setCookie(res, name, value, { httpOnly = false, maxAge = 60 * 60 * 24 * SESSION_DAYS } = {}) {
   const flags = [`${name}=${encodeURIComponent(value)}`, 'Path=/', `Max-Age=${maxAge}`, 'SameSite=Lax', httpOnly ? 'HttpOnly' : '', secureCookie()].filter(Boolean).join('; ');
   const current = res.getHeader('Set-Cookie');
-  res.setHeader('Set-Cookie', current ? [].concat(current, flags) : flags);
+  const cookies = Array.isArray(current) ? current : (current ? [current] : []);
+  res.setHeader('Set-Cookie', [...cookies, flags]);
 }
 function clearCookie(res, name, { httpOnly = false } = {}) { setCookie(res, name, '', { httpOnly, maxAge: 0 }); }
 async function findSessionByToken(token) {
