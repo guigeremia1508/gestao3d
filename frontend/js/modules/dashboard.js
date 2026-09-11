@@ -1,5 +1,7 @@
+let dashboardRange={start:'',end:''};
 pageRenderers.dashboard = async function () {
-  const d = await API.get('/dashboard');
+  const query=(dashboardRange.start&&dashboardRange.end)?`?start=${encodeURIComponent(dashboardRange.start)}&end=${encodeURIComponent(dashboardRange.end)}`:'';
+  const d = await API.get('/dashboard'+query);
   const alerts = [];
   if (d.low_stock > 0) alerts.push(`<div class="alert warn">⚠️ ${d.low_stock} rolo(s) com estoque baixo</div>`);
   if (d.late_orders > 0) alerts.push(`<div class="alert danger">🚨 ${d.late_orders} pedido(s) em atraso</div>`);
@@ -12,6 +14,14 @@ pageRenderers.dashboard = async function () {
     : `<div class="environment-main"><span class="environment-icon">🌡️</span><div><strong>Indisponível</strong><span>Permita a localização para consultar</span></div></div><div class="environment-meta"><button class="btn btn-secondary btn-sm" onclick="updateWeather()">Atualizar clima</button></div>`;
 
   R('content').innerHTML = `
+    <div class="table-wrap" style="margin-bottom:1rem;padding:.75rem 1rem">
+      <div style="display:flex;align-items:flex-end;gap:.75rem;flex-wrap:wrap">
+        <div class="form-group" style="min-width:170px"><label>Período inicial</label><input id="dash-start" type="date" value="${dashboardRange.start||''}"></div>
+        <div class="form-group" style="min-width:170px"><label>Período final</label><input id="dash-end" type="date" value="${dashboardRange.end||''}"></div>
+        <button class="btn btn-primary" onclick="applyDashboardRange()">Aplicar período</button>
+        <button class="btn btn-secondary" onclick="clearDashboardRange()">Últimos 30 dias</button>
+      </div>
+    </div>
     ${alerts.length ? `<div class="alerts">${alerts.join('')}</div>` : ''}
     <div class="cards-grid">
       <div class="stat-card green"><div class="label">Receitas</div><div class="value">${money(d.revenue)}</div><div class="sub">no período</div></div>
@@ -65,3 +75,7 @@ if (!window.g3dDashboardWeatherListener) {
     if (currentPage === 'dashboard') pageRenderers.dashboard().catch(showPageError);
   });
 }
+
+function applyDashboardRange(){const start=R('dash-start')?.value||'',end=R('dash-end')?.value||'';if(start&&end&&start>end)return toast('O período inicial não pode ser maior que o final','err');dashboardRange={start,end};pageRenderers.dashboard().catch(showPageError)}
+function clearDashboardRange(){dashboardRange={start:'',end:''};pageRenderers.dashboard().catch(showPageError)}
+window.applyDashboardRange=applyDashboardRange;window.clearDashboardRange=clearDashboardRange;

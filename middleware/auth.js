@@ -28,7 +28,7 @@ async function findSessionByToken(token) {
   if (!token) return null;
   return dbGet(`
     SELECT s.id, s.user_id, s.expires_at, s.revoked_at,
-           u.id AS uid, u.name, u.email, u.role, u.active
+           u.id AS uid, u.name, u.email, u.role, u.active, u.customer_id
     FROM sessions s JOIN users u ON u.id=s.user_id
     WHERE s.token_hash=$1 AND u.deleted_at IS NULL LIMIT 1
   `, [hashToken(token)]);
@@ -43,7 +43,7 @@ async function auth(req, res, next) {
         clearCookie(res, SESSION_COOKIE, { httpOnly: true }); clearCookie(res, CSRF_COOKIE);
         return res.status(401).json({ error: 'Sessão expirada ou revogada' });
       }
-      req.user = { id:Number(session.uid), name:session.name, email:session.email, role:session.role };
+      req.user = { id:Number(session.uid), name:session.name, email:session.email, role:session.role, customerId:session.customer_id ? Number(session.customer_id) : null };
       req.sessionId = Number(session.id); req.authType = 'cookie'; return next();
     }
     const bearer = req.headers.authorization?.startsWith('Bearer ') ? req.headers.authorization.slice(7) : null;
@@ -51,7 +51,7 @@ async function auth(req, res, next) {
     const payload = jwt.verify(bearer, JWT_SECRET);
     const session = await findSessionByToken(bearer);
     if (!session || session.revoked_at || new Date(session.expires_at) <= new Date() || !session.active) return res.status(401).json({ error:'Sessão expirada ou revogada' });
-    req.user={id:Number(session.uid),name:session.name,email:session.email,role:session.role};
+    req.user={id:Number(session.uid),name:session.name,email:session.email,role:session.role,customerId:session.customer_id ? Number(session.customer_id) : null};
     req.sessionId=Number(session.id); req.authType='legacy-bearer'; req.legacyPayload=payload; next();
   } catch { return res.status(401).json({ error:'Sessão inválida' }); }
 }
@@ -64,6 +64,7 @@ function csrfProtection(req,res,next) {
   if (a.length!==b.length || !crypto.timingSafeEqual(a,b)) return res.status(403).json({error:'Proteção CSRF: token ausente ou inválido'});
   next();
 }
+function operatorOrAdmin(req,res,next){ if(!['ADMIN','OPERADOR'].includes(req.user?.role)) return res.status(403).json({error:'Acesso negado'}); next(); }
 function adminOnly(req,res,next){ if(req.user?.role!=='ADMIN') return res.status(403).json({error:'Acesso negado'}); next(); }
-function userPayload(user){ return {id:Number(user.id),name:user.name,email:user.email,role:user.role}; }
-module.exports={auth,csrfProtection,adminOnly,JWT_SECRET,hashToken,randomToken,setCookie,clearCookie,parseCookies,userPayload,SESSION_COOKIE,CSRF_COOKIE,SESSION_DAYS};
+function userPayload(user){ return {id:Number(user.id),name:user.name,email:user.email,role:user.role,customerId:user.customer_id ? Number(user.customer_id) : null}; }
+module.exports={auth,csrfProtection,adminOnly,operatorOrAdmin,JWT_SECRET,hashToken,randomToken,setCookie,clearCookie,parseCookies,userPayload,SESSION_COOKIE,CSRF_COOKIE,SESSION_DAYS};

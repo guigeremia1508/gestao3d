@@ -1,15 +1,18 @@
 let _financeiro = [];
+let financeFilter={search:'',type:'',paid:'',start:'',end:''};
 
 pageRenderers.financeiro = async function () {
   _financeiro = await API.get('/finance');
   renderFinanceiro();
 };
 
-function renderFinanceiro(filter = '') {
-  const list = filter ? _financeiro.filter(t => t.description.toLowerCase().includes(filter) || t.category?.toLowerCase().includes(filter)) : _financeiro;
+function renderFinanceiro() {
+  const list = _financeiro.filter(t => { const search=financeFilter.search.toLowerCase(); return (!search || t.description.toLowerCase().includes(search) || t.category?.toLowerCase().includes(search)) && (!financeFilter.type || t.type===financeFilter.type) && (!financeFilter.paid || String(!!t.paid)===financeFilter.paid) && (!financeFilter.start || String(t.date)>=financeFilter.start) && (!financeFilter.end || String(t.date)<=financeFilter.end); });
   const receita = list.filter(t => t.type === 'RECEITA').reduce((a, b) => a + b.amount, 0);
   const despesa = list.filter(t => t.type === 'DESPESA').reduce((a, b) => a + b.amount, 0);
   const invest = list.filter(t => t.type === 'INVESTIMENTO').reduce((a, b) => a + b.amount, 0);
+  const receivable = list.filter(t => t.type === 'RECEITA' && !t.paid).reduce((a,b)=>a+b.amount,0);
+  const payable = list.filter(t => t.type === 'DESPESA' && !t.paid).reduce((a,b)=>a+b.amount,0);
 
   R('content').innerHTML = `
     <div class="cards-grid" style="margin-bottom:1rem">
@@ -17,10 +20,16 @@ function renderFinanceiro(filter = '') {
       <div class="stat-card red"><div class="label">Despesas</div><div class="value">${money(despesa)}</div></div>
       <div class="stat-card blue"><div class="label">Investimentos</div><div class="value">${money(invest)}</div></div>
       <div class="stat-card ${receita-despesa >= 0 ? 'green' : 'red'}"><div class="label">Lucro Operacional</div><div class="value">${money(receita-despesa)}</div></div>
+      <div class="stat-card blue"><div class="label">A Receber</div><div class="value">${money(receivable)}</div><div class="sub">receitas pendentes</div></div>
+      <div class="stat-card red"><div class="label">A Pagar</div><div class="value">${money(payable)}</div><div class="sub">despesas pendentes</div></div>
     </div>
     <div class="table-wrap">
       <div class="table-header">
-        <input class="search-input" placeholder="🔍 Buscar..." oninput="renderFinanceiro(this.value.toLowerCase())">
+        <input class="search-input" placeholder="🔍 Buscar..." value="${esc(financeFilter.search)}" oninput="financeFilter.search=this.value;renderFinanceiro()">
+        <select class="search-input" style="width:150px" onchange="financeFilter.type=this.value;renderFinanceiro()"><option value="">Todos os tipos</option><option value="RECEITA" ${financeFilter.type==='RECEITA'?'selected':''}>Receitas</option><option value="DESPESA" ${financeFilter.type==='DESPESA'?'selected':''}>Despesas</option><option value="INVESTIMENTO" ${financeFilter.type==='INVESTIMENTO'?'selected':''}>Investimentos</option></select>
+        <select class="search-input" style="width:140px" onchange="financeFilter.paid=this.value;renderFinanceiro()"><option value="">Todos</option><option value="false" ${financeFilter.paid==='false'?'selected':''}>Pendentes</option><option value="true" ${financeFilter.paid==='true'?'selected':''}>Pagos</option></select>
+        <input class="search-input" style="width:145px" type="date" value="${financeFilter.start}" onchange="financeFilter.start=this.value;renderFinanceiro()">
+        <input class="search-input" style="width:145px" type="date" value="${financeFilter.end}" onchange="financeFilter.end=this.value;renderFinanceiro()">
         <button class="btn btn-primary" onclick="openTransacaoModal()">+ Nova Transação</button>
       </div>
       <table>
@@ -34,7 +43,7 @@ function renderFinanceiro(filter = '') {
               <td>${t.description}</td>
               <td style="color:${t.type==='RECEITA'?'var(--green)':t.type==='DESPESA'?'var(--red)':'var(--blue)'}">${money(t.amount)}</td>
               <td>${dateStr(t.due_date)}</td>
-              <td>${t.paid ? '<span class="badge badge-green">Pago</span>' : '<span class="badge badge-yellow">Pendente</span>'}</td>
+              <td>${t.overdue ? '<span class="badge badge-red">Atrasado</span>' : t.paid ? '<span class="badge badge-green">Pago</span>' : '<span class="badge badge-yellow">Pendente</span>'}</td>
               <td><div class="actions">
                 <button class="btn btn-secondary btn-sm" onclick="openTransacaoModal(${t.id})">✏️</button>
                 <button class="btn btn-danger btn-sm" onclick="deleteTransacao(${t.id})">🗑️</button>
@@ -99,4 +108,4 @@ async function deleteTransacao(id) {
   try { await API.del(`/finance/${id}`); toast('Excluído!'); pageRenderers.financeiro(); } catch (e) { toast(e.message, 'err'); }
 }
 
-window.openTransacaoModal=openTransacaoModal;window.saveTransacao=saveTransacao;window.deleteTransacao=deleteTransacao;window.updateCats=updateCats;
+window.openTransacaoModal=openTransacaoModal;window.saveTransacao=saveTransacao;window.deleteTransacao=deleteTransacao;window.updateCats=updateCats;window.financeFilter=financeFilter;

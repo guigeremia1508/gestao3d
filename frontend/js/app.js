@@ -3,6 +3,8 @@ const R = (id) => document.getElementById(id);
 const money = (v) => 'R$ ' + Number(v || 0).toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, '.');
 const num = (v, d = 0) => Number(v || 0).toFixed(d);
 const dateStr = (s) => s ? new Date(s).toLocaleDateString('pt-BR') : '—';
+const esc = (v='') => String(v).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])).replace(/\"/g,'&quot;').replace(/'/g,'&#39;');
+window.g3dEscape = esc;
 const statusColors = {
   DISPONIVEL: 'green', IMPRIMINDO: 'blue', MANUTENCAO: 'yellow', OFFLINE: 'red',
   APROVADO: 'green', REPROVADO: 'red', CANCELADO: 'gray',
@@ -33,6 +35,7 @@ function confirmAction(msg) { return window.confirm(msg); }
 // ─── MODAL ────────────────────────────────────────────────────────────────────
 function openModal(title, bodyHtml, footerHtml, lg = false) {
   closeModal();
+  const previouslyFocused = document.activeElement;
   const el = document.createElement('div');
   el.className = 'modal-overlay';
   el.id = 'modal-overlay';
@@ -46,8 +49,11 @@ function openModal(title, bodyHtml, footerHtml, lg = false) {
       <div class="modal-footer">${footerHtml}</div>
     </div>`;
   document.body.appendChild(el);
+  const focusTarget = el.querySelector('input,select,textarea,button');
+  focusTarget?.focus();
+  el.dataset.previousFocus = previouslyFocused && previouslyFocused.id ? previouslyFocused.id : '';
 }
-function closeModal() { document.getElementById('modal-overlay')?.remove(); }
+function closeModal() { const el=document.getElementById('modal-overlay'); if(!el)return; const prev=el.dataset.previousFocus ? document.getElementById(el.dataset.previousFocus) : null; el.remove(); prev?.focus(); }
 
 // ─── LOGIN / CADASTRO / LOGOUT ───────────────────────────────────────────────
 function showLogin() {
@@ -122,9 +128,13 @@ R('register-pass-confirm').addEventListener('keydown', e => e.key === 'Enter' &&
 
 async function doLogout() {
   try { if (API.csrfToken || document.cookie.includes('g3d_csrf=')) await API.post('/auth/logout'); } catch {}
-  localStorage.removeItem('g3d_user'); API.csrfToken=null;
+  localStorage.removeItem('g3d_user'); API.csrfToken=null; closeSearch(); closeModal();
   R('app').style.display='none'; R('login-screen').style.display='flex'; showLogin();
 }
+
+document.addEventListener('keydown', e => { if(e.key==='Escape' && document.getElementById('modal-overlay')) closeModal(); });
+
+async function refreshNotificationCount(){try{const rows=await API.get('/notifications');const b=R('notifications-count');if(!b)return;b.textContent=String(Math.min(99,rows.length));b.style.display=rows.length?'':'none';}catch{}}
 
 function initTheme() {
   const saved = localStorage.getItem('g3d_theme');
@@ -206,14 +216,26 @@ function startApp(user) {
   R('login-screen').style.display = 'none';
   R('app').style.display = 'flex';
   R('user-name').textContent = user.name;
+  const notif=R('notifications-button');const gs=document.querySelector('.global-search');if(user.role==='CLIENTE'){if(notif)notif.style.display='none';if(gs)gs.style.display='none';} else {if(notif)notif.style.display='';if(gs)gs.style.display='';}
+  document.querySelectorAll('.nav-item').forEach(el => {
+    const adminOnlyNav = el.classList.contains('admin-nav');
+    const page = el.dataset.page;
+    const restricted = ['configuracoes','auditoria'].includes(page);
+    const clientAllowed = ['dashboard','pedidos','producao'].includes(page);
+    if (user.role === 'CLIENTE') el.style.display = clientAllowed ? '' : 'none';
+    else if (adminOnlyNav || restricted) el.style.display = user.role === 'ADMIN' ? '' : 'none';
+  });
   initTheme();
   updateTopbarClock();
   clearInterval(window.g3dClockTimer);
   window.g3dClockTimer = setInterval(updateTopbarClock, 1000);
   updateWeather();
+  refreshNotificationCount();
   clearInterval(window.g3dWeatherTimer);
   window.g3dWeatherTimer = setInterval(updateWeather, 10 * 60 * 1000);
-  navigate('dashboard');
+  clearInterval(window.g3dNotificationTimer);
+  window.g3dNotificationTimer = setInterval(refreshNotificationCount, 60 * 1000);
+  navigate(user.role === 'CLIENTE' ? 'pedidos' : 'dashboard');
 }
 
 // ─── NAVIGATION ───────────────────────────────────────────────────────────────
@@ -231,20 +253,24 @@ function showPageError(error) {
 }
 
 function navigate(page) {
+  const storedUser = JSON.parse(localStorage.getItem('g3d_user') || '{}');
+  if (storedUser.role === 'CLIENTE' && !['dashboard','pedidos','producao'].includes(page)) {
+    page = 'pedidos';
+  }
   currentPage = page;
   document.querySelectorAll('.nav-item').forEach(el => el.classList.toggle('active', el.dataset.page === page));
   const titles = {
     dashboard: 'Dashboard', projetos: 'Projetos', testes: 'Testes de Impressão',
     produtos: 'Produtos', pedidos: 'Pedidos', orcamentos: 'Orçamentos', producao: 'Produção',
     impressoras: 'Impressoras', estoque: 'Filamentos', ferramentas: 'Ferramentas & Consumíveis', pecas: 'Parafusos & Peças', clientes: 'Clientes',
-    financeiro: 'Financeiro', relatorios: 'Relatórios', configuracoes: 'Configurações'
+    financeiro: 'Financeiro', relatorios: 'Relatórios', calculadora: 'Calculadora de Custos', auditoria: 'Auditoria', configuracoes: 'Configurações'
   };
   R('page-title').textContent = titles[page] || page;
   R('content').innerHTML = `<div style="color:var(--text2);padding:2rem;text-align:center">Carregando...</div>`;
   if (pageRenderers[page]) {
     Promise.resolve(pageRenderers[page]()).catch(showPageError);
   } else {
-    showPageError(new Error(`Módulo "${page}" não foi carregado.`));
+    showPageError(new Error(`Módulo "${esc(page)}" não foi carregado.`));
   }
   closeSidebar();
 }
@@ -258,9 +284,15 @@ function closeSidebar() {
   R('mobile-overlay').classList.remove('open');
 }
 
+let globalSearchTimer=null;
+function closeSearch(){const box=R('global-search-results');if(box)box.innerHTML='';}
+async function globalSearch(q){clearTimeout(globalSearchTimer);const box=R('global-search-results');if(!box)return;if(String(q||'').trim().length<2){box.innerHTML='';return;}globalSearchTimer=setTimeout(async()=>{try{const rows=await API.get('/search?q='+encodeURIComponent(q.trim()));box.innerHTML=rows.length?rows.map(x=>`<button class=\"search-result\" onclick=\"navigate('\${esc(x.route)}\');closeSearch();R('global-search').value=''\"><strong>${esc(x.kind)} · ${esc(x.title)}</strong><span>${esc(x.subtitle||'')}</span></button>`).join(''):'<div class=\"search-empty\">Nenhum resultado.</div>';}catch(e){box.innerHTML=`<div class=\"search-empty\">${esc(e.message)}</div>`}},180);}
+async function openNotifications(){try{const rows=await API.get('/notifications');refreshNotificationCount();openModal('🔔 Notificações',rows.length?`<div class=\"alerts\">${rows.map(x=>`<div class=\"alert ${x.type.includes('ATRASADO')||x.type.includes('FALHOU')?'danger':'warn'}\"><strong>${esc(x.title)}</strong><span>${esc(x.detail||'')}</span></div>`).join('')}</div>`:'<div style=\"padding:1rem;color:var(--text2)\">Tudo em ordem. Milagre estatístico.</div>',`<button class=\"btn btn-secondary\" onclick=\"closeModal()\">Fechar</button>`,true);}catch(e){toast(e.message,'err')}}
+window.globalSearch=globalSearch;window.closeSearch=closeSearch;window.openNotifications=openNotifications;
 // ─── BOOT ─────────────────────────────────────────────────────────────────────
 (async function boot(){
   initTheme(); updateTopbarClock();
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(()=>{});
   try {
     API.csrfToken = (await API.ensureCsrf()) || null;
     const session = await API.get('/auth/me');

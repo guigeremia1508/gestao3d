@@ -69,6 +69,7 @@ async function openTesteModal(id) {
       <div class="form-group"><label>Infill (%)</label><input type="number" id="tf-infill" value="${existing.infill??20}"></div>
       <div class="form-group"><label>Paredes</label><input type="number" id="tf-walls" value="${existing.walls??3}"></div>
       <div class="form-group"><label>Velocidade (mm/s)</label><input type="number" id="tf-speed" value="${existing.speed||60}"></div>
+      <div class="form-group"><label>Suportes</label><select id="tf-supports"><option value="0" ${!existing.supports?'selected':''}>Não</option><option value="1" ${existing.supports?'selected':''}>Sim</option></select></div>
       <div class="form-group"><label>Resultado *</label>
         <select id="tf-result" onchange="toggleFailureFields(this.value)">
           <option value="APROVADO" ${existing.result==='APROVADO'?'selected':''}>Aprovado</option>
@@ -107,7 +108,7 @@ async function saveTeste(id) {
     est_weight_g: R('tf-est_weight_g').value, real_weight_g: R('tf-real_weight_g').value,
     waste_g: R('tf-waste_g').value, temp_nozzle: R('tf-temp_nozzle').value,
     temp_bed: R('tf-temp_bed').value, layer_height: R('tf-layer_height').value,
-    infill: R('tf-infill').value, walls: R('tf-walls').value, speed: R('tf-speed').value,
+    infill: R('tf-infill').value, walls: R('tf-walls').value, speed: R('tf-speed').value, supports: R('tf-supports').value,
     result: R('tf-result').value, failure_type: R('tf-failure_type')?.value,
     failure_cause: R('tf-failure_cause')?.value, notes: R('tf-notes').value
   };

@@ -83,7 +83,8 @@ async function openVersoesModal(pid, pname) {
   openModal(`📋 Versões — ${pname}`, `
     <div class="form-grid" style="margin-bottom:1.5rem">
       <div class="form-group"><label>Versão * (ex: V1, V2)</label><input id="vf-version"></div>
-      <div class="form-group"><label>Arquivo</label><input id="vf-filename"></div>
+      <div class="form-group"><label>Arquivo</label><input id="vf-filename" placeholder="Nome do arquivo se ainda estiver local"></div>
+      <div class="form-group"><label>Arquivo 3D (opcional)</label><input id="vf-file" type="file" accept=".stl,.3mf,.step,.stp,.gcode,.obj"></div>
       <div class="form-group"><label>Autor</label><input id="vf-author"></div>
       <div class="form-group"><label>Resultado</label>
         <select id="vf-result"><option value="">—</option><option value="APROVADO">Aprovado</option><option value="REPROVADO">Reprovado</option></select>
@@ -93,15 +94,15 @@ async function openVersoesModal(pid, pname) {
     </div>
     <h4 style="margin-bottom:.75rem;font-size:.9rem">Histórico de Versões</h4>
     <table><thead><tr><th>Versão</th><th>Autor</th><th>Data</th><th>Resultado</th><th>O que mudou</th></tr></thead>
-    <tbody>${vers.length ? vers.map(v => `<tr><td>${v.version}</td><td>${v.author||'—'}</td><td>${dateStr(v.created_at)}</td><td>${badge(v.result||'—')}</td><td>${v.changes||'—'}</td></tr>`).join('') : '<tr><td colspan="5" style="text-align:center;color:var(--text2)">Sem versões</td></tr>'}</tbody></table>`,
+    <tbody>${vers.length ? vers.map(v => `<tr><td>${v.version}</td><td>${v.author||'—'}</td><td>${dateStr(v.created_at)}</td><td>${badge(v.result||'—')}</td><td>${v.changes||'—'}${v.file_storage_key?`<br><button class="btn btn-secondary btn-sm" onclick="downloadVersionFile(${pid},${v.id})">📎 ${v.filename||'Arquivo'}</button>`:'<br><small style="color:var(--text2)">Sem arquivo 3D</small>'}</td></tr>`).join('') : '<tr><td colspan="5" style="text-align:center;color:var(--text2)">Sem versões</td></tr>'}</tbody></table>`,
     `<button class="btn btn-secondary" onclick="closeModal()">Fechar</button>
      <button class="btn btn-primary" onclick="saveVersao(${pid})">Adicionar Versão</button>`, true);
 }
 
 async function saveVersao(pid) {
-  const body = { version: R('vf-version').value, filename: R('vf-filename').value, author: R('vf-author').value, result: R('vf-result').value, changes: R('vf-changes').value, reason: R('vf-reason').value };
+  const pname=(document.querySelector('#modal-overlay .modal-header h3')?.textContent||'').replace('📋 Versões — ','').trim(); const body = { version: R('vf-version').value, filename: R('vf-filename').value, author: R('vf-author').value, result: R('vf-result').value, changes: R('vf-changes').value, reason: R('vf-reason').value };
   if (!body.version) return toast('Versão é obrigatória', 'err');
-  try { await API.post(`/projects/${pid}/versions`, body); toast('Versão adicionada!'); openVersoesModal(pid, ''); } catch (e) { toast(e.message, 'err'); }
+  try { const created=await API.post(`/projects/${pid}/versions`, body); const file=R('vf-file')?.files?.[0]; if(file) await API.uploadProjectFile(pid,created.id,file); toast(file?'Versão e arquivo adicionados!':'Versão adicionada!'); openVersoesModal(pid, pname); } catch (e) { toast(e.message, 'err'); }
 }
 
 async function openProjetoPecasModal(pid,pname){
@@ -115,4 +116,6 @@ async function openProjetoPecasModal(pid,pname){
 async function addProjetoPeca(pid,pname){const b={part_id:R('pp-part').value,quantity:R('pp-qty').value};if(!b.part_id)return toast('Selecione uma peça','err');try{await API.post(`/projects/${pid}/parts`,b);toast('Peça adicionada e estoque baixado!');openProjetoPecasModal(pid,pname); }catch(e){toast(e.message,'err')}}
 async function removeProjetoPeca(pid,id,pname){if(!confirmAction('Remover a peça e devolver ao estoque?'))return;try{await API.del(`/projects/${pid}/parts/${id}`);toast('Peça devolvida ao estoque');openProjetoPecasModal(pid,pname)}catch(e){toast(e.message,'err')}}
 
+async function downloadVersionFile(pid,vid){try{window.open(`/api/projects/${pid}/versions/${vid}/file`,'_blank','noopener');}catch(e){toast(e.message,'err')}}
+window.downloadVersionFile=downloadVersionFile;
 window.openProjetoModal=openProjetoModal;window.saveProjeto=saveProjeto;window.deleteProjeto=deleteProjeto;window.openVersoesModal=openVersoesModal;window.saveVersao=saveVersao;window.openProjetoPecasModal=openProjetoPecasModal;window.addProjetoPeca=addProjetoPeca;window.removeProjetoPeca=removeProjetoPeca;

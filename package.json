@@ -1,14 +1,17 @@
 {
   "name": "gestao3d",
-  "version": "2.0.0",
+  "version": "3.2.0",
   "description": "Gestão de empresa de impressão 3D",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
     "import:sqlite": "node scripts/import-sqlite.js",
-    "test": "node scripts/self-test.js",
-    "check": "node scripts/self-test.js"
+    "test": "node --test tests/quality.test.js",
+    "check": "node --test tests/quality.test.js && node scripts/self-test.js && node scripts/security-smoke.js",
+    "security:smoke": "node scripts/security-smoke.js",
+    "test:quality": "node --test tests/quality.test.js",
+    "predeploy": "node scripts/predeploy-check.js"
   },
   "engines": {
     "node": ">=18"

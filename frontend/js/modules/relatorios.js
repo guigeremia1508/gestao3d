@@ -11,10 +11,11 @@ pageRenderers.relatorios = async function () {
 async function loadRelatorios() {
   const start = R('rel-start').value;
   const end = R('rel-end').value;
-  const [fin, prod, prods] = await Promise.all([
+  const [fin, prod, prods, stock] = await Promise.all([
     API.get(`/reports/finance?start=${start}&end=${end}`),
     API.get(`/reports/production?start=${start}&end=${end}`),
-    API.get('/reports/products')
+    API.get(`/reports/products?start=${start}&end=${end}`),
+    API.get(`/reports/stock?start=${start}&end=${end}`)
   ]);
 
   const totalRec = fin.by_category.filter(c=>c.type==='RECEITA').reduce((a,b)=>a+Number(b.total||0),0);
@@ -87,8 +88,12 @@ async function loadRelatorios() {
       <table>
         <thead><tr><th>Impressora</th><th>Trabalhos</th><th>Horas</th><th>Filamento</th></tr></thead>
         <tbody>
-          ${prod.by_printer.map(p => `<tr><td>${p.name}</td><td>${p.jobs}</td><td>${num(p.hours,1)}h</td><td>${num(p.filament,0)}g</td></tr>`).join('')}
+          ${prod.by_printer.map(p => `<tr><td>${esc(p.name)}</td><td>${p.jobs}</td><td>${num(p.hours,1)}h</td><td>${num(p.filament,0)}g</td></tr>`).join('')}
         </tbody>
       </table>
-    </div>` : ''}`;
+    </div>` : ''}
+    <div class="row" style="margin-top:1rem">
+      <div class="col"><div class="table-wrap"><div class="table-header"><strong>📦 Estoque — Movimentações</strong></div><table><thead><tr><th>Tipo</th><th>Quantidade</th></tr></thead><tbody>${stock.moves.length?stock.moves.map(m=>`<tr><td>${badge(m.type)}</td><td>${num(m.total,1)}g</td></tr>`).join(''):'<tr><td colspan="2" style="text-align:center;color:var(--text2)">Sem movimentações no período</td></tr>'}</tbody></table></div></div>
+      <div class="col"><div class="table-wrap"><div class="table-header"><strong>⚠️ Estoque abaixo do mínimo</strong><span style="color:var(--text2);font-size:.8rem">${stock.low_stock.length} rolo(s)</span></div><table><thead><tr><th>Rolo</th><th>Material</th><th>Atual</th><th>Mínimo</th></tr></thead><tbody>${stock.low_stock.length?stock.low_stock.map(r=>`<tr><td>${esc(r.code||'—')}</td><td>${esc((r.type||'')+' '+(r.color||''))}</td><td>${num(r.current_weight_g,0)}g</td><td>${num(r.min_stock_g,0)}g</td></tr>`).join(''):'<tr><td colspan="4" style="text-align:center;color:var(--text2)">Estoque dentro do mínimo</td></tr>'}</tbody></table></div></div>
+    </div>`;
 }

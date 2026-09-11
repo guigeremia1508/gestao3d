@@ -1,7 +1,14 @@
 let _producao = [], _impressorasProd = [], _rollsProd = [];
 
 pageRenderers.producao = async function () {
-  [_producao, _impressorasProd, _rollsProd] = await Promise.all([API.get('/production'), API.get('/printers'), API.get('/rolls')]);
+  const user = JSON.parse(localStorage.getItem('g3d_user') || '{}');
+  if (user.role === 'CLIENTE') {
+    _producao = await API.get('/production');
+    _impressorasProd = [];
+    _rollsProd = [];
+  } else {
+    [_producao, _impressorasProd, _rollsProd] = await Promise.all([API.get('/production'), API.get('/printers'), API.get('/rolls')]);
+  }
   renderProducao();
 };
 
@@ -27,7 +34,7 @@ function renderProducao() {
               <td>${num(j.real_time_min,0)}min</td>
               <td>${badge(j.result || '—')}</td>
               <td>${badge(j.status)}</td>
-              <td><button class="btn btn-secondary btn-sm" onclick="openProdJobModal(${j.id})">✏️ Atualizar</button></td>
+              <td>${JSON.parse(localStorage.getItem('g3d_user') || '{}').role !== 'CLIENTE' ? `<button class="btn btn-secondary btn-sm" onclick="openProdJobModal(${j.id})">✏️ Atualizar</button>` : '<span style="color:var(--text2)">Visualização</span>'}</td>
             </tr>`).join('') : '<tr><td colspan="10" style="text-align:center;color:var(--text2);padding:2rem">Nenhuma ordem de produção</td></tr>'}
         </tbody>
       </table>

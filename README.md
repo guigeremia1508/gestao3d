@@ -1,27 +1,62 @@
-# Gestão 3D 2.1
+# Gestão 3D 3.2
 
-Sistema web para gestão de uma pequena operação de impressão 3D, com PostgreSQL, autenticação por sessão, estoque, projetos, testes, produtos, pedidos, produção, financeiro, manutenção, relatórios e backups.
+Sistema web profissional para pequena operação de impressão 3D e fabricação digital, mantido em uma única aplicação pública Railway com PostgreSQL separado.
+
+## Stack atual
+- Node.js + Express
+- PostgreSQL
+- Frontend web leve em HTML/CSS/JavaScript modular
+- Sessões por cookie HttpOnly + CSRF
+- Argon2id para senhas novas
+- Cloudinary para imagens e arquivos 3D quando configurado
+- PWA/offline shell
+
+A especificação master original descreve uma futura arquitetura React + TypeScript + Prisma. Esta versão prioriza estabilidade e evolução incremental da aplicação que já está funcionando em produção, sem reescrever o sistema inteiro.
 
 ## Rodar localmente
-1. Instale Node.js 20+ e PostgreSQL.
-2. Copie `.env.example` para `.env` e preencha `DATABASE_URL`.
-3. Rode `npm install`.
-4. Rode `npm run check`.
-5. Rode `npm start`.
-6. Abra `http://localhost:3000`.
+```bash
+npm install
+npm run check
+npm start
+```
 
-Em um banco vazio de produção, defina `INITIAL_ADMIN_EMAIL` e `INITIAL_ADMIN_PASSWORD` antes do primeiro start. O projeto não cria mais a senha `admin123` automaticamente.
+## Railway
+Mantenha um único serviço público `gestao3d` para o site. O PostgreSQL permanece como serviço privado do projeto; Railway fornece `DATABASE_URL` para os demais serviços. Railway suporta jobs cron separados para tarefas agendadas como backups.
 
-## Deploy Railway
-Use **um único serviço público** para a aplicação web. O PostgreSQL continua como serviço de banco. Um serviço/cron privado separado para backup pode continuar existindo, mas não é necessário criar outro site público.
+Variáveis principais do serviço web:
+- `NODE_ENV=production`
+- `DATABASE_URL`
+- `INVITE_CODE`
+- `JWT_SECRET` é opcional no fluxo atual por sessão e serve apenas para compatibilidade legada
+- `INITIAL_ADMIN_EMAIL` e `INITIAL_ADMIN_PASSWORD` apenas no primeiro bootstrap de um banco sem ADMIN
+- `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` se quiser armazenamento de imagens/arquivos 3D
 
-Variáveis principais: `NODE_ENV=production`, `DATABASE_URL` (fornecida pelo serviço PostgreSQL), `INITIAL_ADMIN_EMAIL`/`INITIAL_ADMIN_PASSWORD` somente quando ainda não existir ADMIN, `INVITE_CODE`, `CLOUDINARY_*` e um `JWT_SECRET` forte para compatibilidade legada.
-
-## Segurança
-A autenticação nova usa cookie `HttpOnly` + `Secure` em produção + `SameSite=Lax`, token CSRF separado e sessões revogáveis no PostgreSQL. Senhas novas são armazenadas com Argon2id; senhas legadas em bcrypt são migradas após login válido.
+Não coloque credenciais no frontend ou no Git.
 
 ## Backup
-O painel administrativo mantém exportação/restauração lógica em JSON. Sessões nunca entram no backup e são limpas durante uma restauração. O backup automático da hospedagem pode permanecer como camada adicional.
+O painel administrativo mantém backup/restauração lógica e o projeto continua compatível com um serviço Cron privado separado para backup diário. Railway executa Cron Jobs em UTC e o processo deve terminar depois de concluir a tarefa.
+
+## Novidades desta versão 3.1
+- Auditoria visual no painel
+- Busca global
+- Central de notificações
+- Calculadora independente de custos/preço
+- PWA e cache do shell da aplicação
+- Arquivos 3D por versão de projeto via Cloudinary raw/authenticated
+- Gerenciamento básico de sessões do usuário
+- Perfil CLIENTE com escopo de pedidos/produção por cliente
+- Índices adicionais e health check
+
+## Docker
+
+Para desenvolvimento local com PostgreSQL via containers:
+```bash
+docker compose up --build
+```
+Troque a senha de desenvolvimento do compose antes de qualquer uso fora da máquina local.
 
 ## Testes
-`npm run check` executa o self-test estrutural. Em produção, faça também um login real e teste criação/edição de projeto, atualização de produção, movimento de estoque, backup e restauração em uma janela segura.
+```bash
+npm run check
+```
+Depois do deploy, faça um teste real no Railway de login, edição, produção, estoque, upload, backup e restauração.

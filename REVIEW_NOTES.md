@@ -1,28 +1,24 @@
-# Revisão técnica final - Gestão 3D
+# Revisão técnica 3.1
 
-## Correções aplicadas
-- Corrigido o bug dos botões de editar causado por IDs BIGINT retornados pelo PostgreSQL como string. Os módulos normalizam os IDs antes do `find`.
-- Autenticação nova migrada para sessão em cookie HttpOnly/Secure/SameSite + CSRF em memória/cookie separado.
-- Senhas novas usam Argon2id; usuários existentes em bcrypt são migrados automaticamente após login válido.
-- Removido preenchimento de credenciais padrão do HTML e removido fallback de código de convite hardcoded.
-- Adicionado rate limiting global da API e limites específicos para login/cadastro/alteração de senha.
-- Adicionados headers de segurança e tratamento de erro sem stack trace em produção.
-- Adicionada tabela `audit_logs` e registro de ações de mutação.
-- Descontinuado o uso de token de autenticação em `localStorage`.
-- Backup lógico passou a usar versão 2 e não inclui a tabela `sessions`; restauração limpa as sessões.
-- Movimentações manuais de filamento/peças/consumíveis agora usam transações e lock do item.
-- Produção foi tornada transacional, com reversão do consumo anterior para evitar consumo duplicado ao editar.
-- Totais das impressoras são recalculados a partir da produção, evitando a contagem dupla de falhas.
-- Confirmação de pedido usa transação e evita criar venda/produção duplicadas; também vincula projeto/versão do produto à produção quando existentes.
-- Testes ganharam edição e correção transacional do consumo de filamento.
-- Peças vinculadas a projeto usam soft delete, preservando histórico.
-- ROI do dashboard passou a usar lucro comercial acumulado, sem tratar receita bruta como lucro.
-- Upload de imagens aceita somente MIME de imagem permitido e mantém limite de 8 MB.
-- Backup/restauração do painel foi ajustado para autenticação por cookie/CSRF.
-- `.gitignore`, `.env.example` e README foram atualizados para produção.
+## Fechado nesta rodada
+- Corrigidos os fluxos de edição baseados em BIGINT do PostgreSQL.
+- Sessão segura por cookie HttpOnly/Secure/SameSite + CSRF.
+- Argon2id para novas senhas e migração de bcrypt legado.
+- Rate limiting, headers, erros sem stack trace e autorização backend.
+- Estoque e produção com transactions/locks e reversão de consumo ao editar.
+- Backup lógico v2 sem sessões.
+- Auditoria persistente e tela administrativa.
+- Busca global.
+- Notificações derivadas de estoque/pedidos/financeiro/manutenção/falhas.
+- Calculadora de custos independente.
+- Arquivos 3D por versão com hash, tamanho, MIME, storage key e Cloudinary raw/authenticated.
+- PWA shell e service worker.
+- Sessões do usuário podem ser consultadas/revogadas.
+- CLIENTE pode ser associado a um cliente e recebe apenas seus pedidos/produção.
+- Corrigido frontend do perfil CLIENTE para não solicitar `/customers`, `/products`, `/printers` ou `/rolls`.
+- Corrigido total de pedidos para nunca ficar negativo.
+- Cache PWA versionado e pré-cache dos módulos.
+- Adicionada documentação de conformidade com a master.
 
-## O que continua como evolução futura
-A especificação master possui itens que são arquitetura/fase futura, como migração completa para React/TypeScript, Prisma, object storage de arquivos 3D privados, Print Agent local ESC/POS, MFA, paginação server-side avançada e suíte de testes de segurança automatizados completa. Esta revisão prioriza a versão atual funcional sem destruir o sistema existente.
-
-## Banco existente no Railway
-O startup executa upgrades compatíveis com banco existente usando `IF NOT EXISTS` e preserva dados. Não é necessário apagar o PostgreSQL para aplicar esta versão.
+## Limites restantes
+A master pede React + TypeScript + Vite + Prisma como arquitetura futura, Print Agent local ESC/POS, MFA/2FA, recuperação de senha com fluxo de e-mail, paginação server-side completa em todas as telas, suíte automatizada de segurança e observabilidade mais profunda. Esses itens são evoluções estruturais, não pequenos patches.

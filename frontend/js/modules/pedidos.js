@@ -1,7 +1,14 @@
 let _pedidos = [], _clientesPed = [], _produtosPed = [];
 
 pageRenderers.pedidos = async function () {
-  [_pedidos, _clientesPed, _produtosPed] = await Promise.all([API.get('/orders'), API.get('/customers'), API.get('/products')]);
+  const user = JSON.parse(localStorage.getItem('g3d_user') || '{}');
+  if (user.role === 'CLIENTE') {
+    _pedidos = await API.get('/orders');
+    _clientesPed = [];
+    _produtosPed = [];
+  } else {
+    [_pedidos, _clientesPed, _produtosPed] = await Promise.all([API.get('/orders'), API.get('/customers'), API.get('/products')]);
+  }
   renderPedidos();
 };
 
@@ -13,7 +20,7 @@ function renderPedidos(filter = '') {
     <div class="table-wrap">
       <div class="table-header">
         <input class="search-input" placeholder="🔍 Buscar..." oninput="renderPedidos(this.value.toLowerCase())">
-        <button class="btn btn-primary" onclick="openPedidoModal()">+ Novo Pedido</button>
+        ${JSON.parse(localStorage.getItem('g3d_user') || '{}').role !== 'CLIENTE' ? '<button class="btn btn-primary" onclick="openPedidoModal()">+ Novo Pedido</button>' : ''}
       </div>
       <table>
         <thead><tr><th>#</th><th>Cliente</th><th>Produto</th><th>Qtd</th><th>Total</th><th>Pagamento</th><th>Prazo</th><th>Status</th><th></th></tr></thead>
@@ -28,10 +35,7 @@ function renderPedidos(filter = '') {
               <td>${o.payment_method || '—'}</td>
               <td>${dateStr(o.due_date)}</td>
               <td>${badge(o.status)}</td>
-              <td><div class="actions">
-                <button class="btn btn-secondary btn-sm" onclick="openPedidoModal(${o.id})">✏️</button>
-                <button class="btn btn-danger btn-sm" onclick="deletePedido(${o.id})">🗑️</button>
-              </div></td>
+              <td>${JSON.parse(localStorage.getItem('g3d_user') || '{}').role !== 'CLIENTE' ? `<div class="actions"><button class="btn btn-secondary btn-sm" onclick="openPedidoModal(${o.id})">✏️</button><button class="btn btn-danger btn-sm" onclick="deletePedido(${o.id})">🗑️</button></div>` : '<span style="color:var(--text2)">Visualização</span>'}</td>
             </tr>`).join('') : '<tr><td colspan="9" style="text-align:center;color:var(--text2);padding:2rem">Nenhum pedido cadastrado</td></tr>'}
         </tbody>
       </table>

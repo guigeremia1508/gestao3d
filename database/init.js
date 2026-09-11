@@ -144,7 +144,7 @@ CREATE TABLE IF NOT EXISTS projects (
 CREATE TABLE IF NOT EXISTS project_versions (
   id BIGSERIAL PRIMARY KEY, project_id BIGINT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
   version TEXT NOT NULL, filename TEXT, changes TEXT, reason TEXT, result TEXT, author TEXT,
-  file_storage_key TEXT, file_size BIGINT, file_mime TEXT, file_hash TEXT,
+  file_storage_key TEXT, file_size BIGINT, file_mime TEXT, file_hash TEXT, file_storage_provider TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE TABLE IF NOT EXISTS project_parts (
@@ -219,7 +219,7 @@ CREATE TABLE IF NOT EXISTS quotes (
   price_total NUMERIC(14,2) NOT NULL DEFAULT 0,
   real_margin_percent NUMERIC(10,2) NOT NULL DEFAULT 0,
   status TEXT NOT NULL DEFAULT 'ORCAMENTO',
-  notes TEXT,
+  notes TEXT, price_mode TEXT NOT NULL DEFAULT 'markup',
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   deleted_at TIMESTAMPTZ
@@ -237,6 +237,8 @@ async function initDb() {
   const p = getPool();
   await p.query(schema);
   // Safe schema upgrades for installations created with the first PostgreSQL release.
+  await p.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS customer_id BIGINT`);
+  await p.query(`DO $$ BEGIN ALTER TABLE users ADD CONSTRAINT users_customer_fk FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE SET NULL; EXCEPTION WHEN duplicate_object THEN NULL; END $$`);
   await p.query(`ALTER TABLE printers ADD COLUMN IF NOT EXISTS photo_url TEXT`);
   await p.query(`ALTER TABLE printers ADD COLUMN IF NOT EXISTS cloudinary_public_id TEXT`);
   await p.query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS cost_parts NUMERIC(14,2) DEFAULT 0`);
@@ -244,6 +246,8 @@ async function initDb() {
   await p.query(`ALTER TABLE printer_maintenance ADD COLUMN IF NOT EXISTS hours_at NUMERIC(14,2)`);
   await p.query(`ALTER TABLE quotes ADD COLUMN IF NOT EXISTS project_id BIGINT REFERENCES projects(id) ON DELETE SET NULL`);
   await p.query(`ALTER TABLE quotes ADD COLUMN IF NOT EXISTS project_time_min NUMERIC(14,2) NOT NULL DEFAULT 0`);
+  await p.query(`ALTER TABLE quotes ADD COLUMN IF NOT EXISTS price_mode TEXT NOT NULL DEFAULT 'markup'`);
+  await p.query(`CREATE INDEX IF NOT EXISTS idx_transactions_due_paid ON transactions(due_date,paid) WHERE deleted_at IS NULL`);
   await p.query(`CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id)`);
   await p.query(`CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at)`);
   const defs = {

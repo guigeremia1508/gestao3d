@@ -27,6 +27,7 @@ pageRenderers.configuracoes = async function () {
         </div>
       </div>
       <button class="btn btn-primary" onclick="saveConfigs()">💾 Salvar Configurações</button>
+      <div class="table-wrap" style="padding:1.5rem;margin-top:1rem"><h3 style="margin-bottom:.8rem;font-size:.95rem">🔐 Segurança da conta</h3><div class="form-grid"><div class="form-group"><label>Senha atual</label><input id="pw-current" type="password" autocomplete="current-password"></div><div></div><div class="form-group"><label>Nova senha</label><input id="pw-new" type="password" minlength="8" autocomplete="new-password"></div><div class="form-group"><label>Confirmar nova senha</label><input id="pw-confirm" type="password" minlength="8" autocomplete="new-password"></div></div><button class="btn btn-secondary" onclick="changePassword()">Alterar senha</button><button class="btn btn-secondary" style="margin-left:.5rem" onclick="openSessionsModal()">📱 Minhas sessões</button></div>
       <button class="btn btn-secondary" style="margin-left:.5rem" onclick="openUsuariosModal()">👥 Gerenciar Usuários</button>
     ${backupBlock}</div>`;
 };
@@ -40,24 +41,19 @@ async function saveConfigs() {
 
 // ─── USUÁRIOS ─────────────────────────────────────────
 async function openUsuariosModal() {
-  const users = await API.get('/auth/users');
+  const [users, customers] = await Promise.all([API.get('/auth/users'), API.get('/customers')]);
   openModal('👥 Gerenciar Usuários', `
     <div class="form-grid" style="margin-bottom:1.5rem">
       <div class="form-group span2"><label>Nome *</label><input id="uf-name"></div>
       <div class="form-group"><label>E-mail *</label><input id="uf-email" type="email"></div>
       <div class="form-group"><label>Senha *</label><input id="uf-pass" type="password"></div>
-      <div class="form-group"><label>Perfil</label>
-        <select id="uf-role">
-          <option value="OPERADOR">Operador</option>
-          <option value="ADMIN">Admin</option>
-          <option value="CLIENTE">Cliente</option>
-        </select>
-      </div>
+      <div class="form-group"><label>Perfil</label><select id="uf-role" onchange="toggleCustomerSelect()"><option value="OPERADOR">Operador</option><option value="ADMIN">Admin</option><option value="CLIENTE">Cliente</option></select></div>
+      <div class="form-group" id="uf-customer-wrap" style="display:none"><label>Cliente vinculado</label><select id="uf-customer_id"><option value="">Selecione...</option>${customers.map(c=>`<option value="${c.id}">${c.name}</option>`).join('')}</select></div>
     </div>
-    <table><thead><tr><th>Nome</th><th>E-mail</th><th>Perfil</th><th>Status</th><th></th></tr></thead>
+    <table><thead><tr><th>Nome</th><th>E-mail</th><th>Perfil</th><th>Cliente</th><th>Status</th><th></th></tr></thead>
     <tbody>${users.map(u => `<tr>
       <td>${u.name}</td><td>${u.email}</td>
-      <td>${badge(u.role)}</td>
+      <td>${badge(u.role)}</td><td>${u.customer_name||'—'}</td>
       <td>${u.active ? '<span class="badge badge-green">Ativo</span>' : '<span class="badge badge-gray">Inativo</span>'}</td>
       <td><button class="btn btn-secondary btn-sm" onclick="editUser(${u.id})">✏️</button> <button class="btn btn-danger btn-sm" onclick="deleteUser(${u.id})">🗑️</button></td>
     </tr>`).join('')}</tbody></table>`,
@@ -66,7 +62,7 @@ async function openUsuariosModal() {
 }
 
 async function createUser() {
-  const body = { name: R('uf-name').value, email: R('uf-email').value, password: R('uf-pass').value, role: R('uf-role').value };
+  const body = { name: R('uf-name').value, email: R('uf-email').value, password: R('uf-pass').value, role: R('uf-role').value, customer_id: R('uf-customer_id')?.value||null };
   if (!body.name || !body.email || !body.password) return toast('Preencha todos os campos', 'err');
   try { await API.post('/auth/users', body); toast('Usuário criado!'); openUsuariosModal(); } catch(e) { toast(e.message, 'err'); }
 }
@@ -76,8 +72,14 @@ async function deleteUser(id) {
   try { await API.del(`/auth/users/${id}`); toast('Usuário removido!'); openUsuariosModal(); } catch(e) { toast(e.message, 'err'); }
 }
 
-async function editUser(id){const users=await API.get('/auth/users'),u=users.find(x=>Number(x.id)===Number(id));if(!u)return toast('Usuário não encontrado','err');openModal('✏️ Editar usuário',`<div class="form-grid"><div class="form-group span2"><label>Nome</label><input id="eu-name" value="${u.name||''}"></div><div class="form-group span2"><label>E-mail</label><input id="eu-email" type="email" value="${u.email||''}"></div><div class="form-group"><label>Perfil</label><select id="eu-role"><option value="OPERADOR" ${u.role==='OPERADOR'?'selected':''}>Operador</option><option value="ADMIN" ${u.role==='ADMIN'?'selected':''}>Admin</option><option value="CLIENTE" ${u.role==='CLIENTE'?'selected':''}>Cliente</option></select></div><div class="form-group"><label>Ativo</label><select id="eu-active"><option value="1" ${u.active?'selected':''}>Sim</option><option value="0" ${!u.active?'selected':''}>Não</option></select></div></div>`,`<button class="btn btn-secondary" onclick="openUsuariosModal()">Cancelar</button><button class="btn btn-primary" onclick="updateUser(${id})">Salvar</button>`)}
-async function updateUser(id){const body={name:R('eu-name').value,email:R('eu-email').value,role:R('eu-role').value,active:R('eu-active').value==='1'};try{await API.put(`/auth/users/${id}`,body);toast('Usuário atualizado!');openUsuariosModal()}catch(e){toast(e.message,'err')}}
+async function editUser(id){const [users,customers]=await Promise.all([API.get('/auth/users'),API.get('/customers')]),u=users.find(x=>Number(x.id)===Number(id));if(!u)return toast('Usuário não encontrado','err');openModal('✏️ Editar usuário',`<div class="form-grid"><div class="form-group span2"><label>Nome</label><input id="eu-name" value="${u.name||''}"></div><div class="form-group span2"><label>E-mail</label><input id="eu-email" type="email" value="${u.email||''}"></div><div class="form-group"><label>Perfil</label><select id="eu-role"><option value="OPERADOR" ${u.role==='OPERADOR'?'selected':''}>Operador</option><option value="ADMIN" ${u.role==='ADMIN'?'selected':''}>Admin</option><option value="CLIENTE" ${u.role==='CLIENTE'?'selected':''}>Cliente</option></select></div><div class="form-group"><label>Cliente vinculado</label><select id="eu-customer_id"><option value="">—</option>${customers.map(c=>`<option value="${c.id}" ${Number(u.customer_id)===Number(c.id)?'selected':''}>${c.name}</option>`).join('')}</select></div><div class="form-group"><label>Ativo</label><select id="eu-active"><option value="1" ${u.active?'selected':''}>Sim</option><option value="0" ${!u.active?'selected':''}>Não</option></select></div></div>`,`<button class="btn btn-secondary" onclick="openUsuariosModal()">Cancelar</button><button class="btn btn-primary" onclick="updateUser(${id})">Salvar</button>`)}
+async function updateUser(id){const body={name:R('eu-name').value,email:R('eu-email').value,role:R('eu-role').value,active:R('eu-active').value==='1',customer_id:R('eu-customer_id')?.value||null};try{await API.put(`/auth/users/${id}`,body);toast('Usuário atualizado!');openUsuariosModal()}catch(e){toast(e.message,'err')}}
 async function downloadBackup(){try{const res=await fetch('/api/backup/export',{credentials:'same-origin'});if(res.status===401){doLogout();return;}if(!res.ok){const j=await res.json().catch(()=>({}));throw new Error(j.error||'Falha ao gerar backup')}const blob=await res.blob(),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`gestao3d-backup-${new Date().toISOString().slice(0,10)}.json`;document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);toast('Backup baixado!')}catch(e){toast(e.message,'err')}}
 async function restoreBackup(file){if(!file)return;if(!confirmAction('Atenção: restaurar este backup vai substituir os dados atuais. Continuar?')){R('backup-file').value='';return;}try{const fd=new FormData();fd.append('backup',file);const res=await fetch('/api/backup/restore',{method:'POST',headers:{'X-CSRF-Token':await API.ensureCsrf()},credentials:'same-origin',body:fd});if(res.status===401){doLogout();return;}const j=await res.json().catch(()=>({}));if(!res.ok)throw new Error(j.error||'Falha ao restaurar backup');toast('Backup restaurado. A página será recarregada.');setTimeout(()=>location.reload(),700)}catch(e){toast(e.message,'err');R('backup-file').value=''}}
 window.downloadBackup=downloadBackup;window.restoreBackup=restoreBackup;window.editUser=editUser;window.updateUser=updateUser;
+function toggleCustomerSelect(){const w=R('uf-customer-wrap');if(w)w.style.display=R('uf-role').value==='CLIENTE'?'':'none';}
+
+async function changePassword(){const current=R('pw-current')?.value,newPass=R('pw-new')?.value,confirm=R('pw-confirm')?.value;if(!current||!newPass)return toast('Preencha a senha atual e a nova senha','err');if(newPass!==confirm)return toast('As novas senhas não coincidem','err');if(newPass.length<8)return toast('A nova senha precisa ter pelo menos 8 caracteres','err');try{await API.put('/auth/password',{current,newPass});toast('Senha alterada. Faça login novamente.');setTimeout(()=>doLogout(),700)}catch(e){toast(e.message,'err')}}
+async function openSessionsModal(){try{const sessions=await API.get('/auth/sessions');openModal('📱 Minhas sessões',`<p style="color:var(--text2);font-size:.82rem;margin-bottom:1rem">Sessões armazenadas para sua conta. Revogue qualquer uma que não reconheça.</p><table><thead><tr><th>Criada</th><th>Expira</th><th>Status</th><th></th></tr></thead><tbody>${sessions.map(x=>`<tr><td>${dateStr(x.created_at)}</td><td>${dateStr(x.expires_at)}</td><td>${x.revoked_at?badge('CANCELADO'):badge('DISPONIVEL')}</td><td>${x.revoked_at?'':`<button class="btn btn-danger btn-sm" onclick="revokeSession(${x.id})">Revogar</button>`}</td></tr>`).join('')}</tbody></table>`,`<button class="btn btn-secondary" onclick="closeModal()">Fechar</button>`,true)}catch(e){toast(e.message,'err')}}
+async function revokeSession(id){try{await API.del(`/auth/sessions/${id}`);toast('Sessão revogada.');openSessionsModal()}catch(e){toast(e.message,'err')}}
+window.changePassword=changePassword;window.openSessionsModal=openSessionsModal;window.revokeSession=revokeSession;

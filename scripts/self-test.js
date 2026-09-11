@@ -19,7 +19,7 @@ assert(maintenance(150, 100, 160).next === 250, 'maintenance cycle reset without
 const files = [
   'routes/api.js', 'routes/auth.js', 'middleware/auth.js', 'database/init.js',
   'frontend/js/app.js', 'frontend/js/modules/orcamentos.js', 'frontend/js/modules/impressoras.js',
-  'frontend/js/modules/configuracoes.js'
+  'frontend/js/modules/configuracoes.js','frontend/js/modules/calculadora.js','frontend/js/modules/auditoria.js'
 ];
 for (const rel of files) assert(fs.existsSync(path.join(__dirname, '..', rel)), `missing ${rel}`);
 
@@ -52,3 +52,10 @@ assert(apiClient.includes('X-CSRF-Token'), 'API must send CSRF token');
 assert(auth.includes('argon2'), 'auth must use Argon2id');
 assert(!fs.readFileSync(path.join(__dirname, '..', 'frontend/index.html'), 'utf8').includes('value="admin123"'), 'default admin password must not be shipped in HTML');
 assert(modules.includes('Number(x.id) === Number(id)') || modules.includes('Number(v.id) === Number(id)'), 'edit lookups must normalize PostgreSQL bigint ids');
+assert(fs.existsSync(path.join(__dirname, '..', 'frontend', 'manifest.webmanifest')), 'PWA manifest must exist');
+assert(fs.existsSync(path.join(__dirname, '..', 'frontend', 'sw.js')), 'service worker must exist');
+assert(fs.readFileSync(path.join(__dirname, '..', 'middleware/auth.js'), 'utf8').includes('customerId'), 'auth payload must include customer scope');
+assert(api.includes("router.use((req,res,next)=>{if(req.user?.role==='CLIENTE')"), 'client role must be restricted server-side');
+assert(fs.readFileSync(path.join(__dirname, '..', 'frontend/js/modules/pedidos.js'), 'utf8').includes("user.role === 'CLIENTE'"), 'client orders UI must be read-only');
+assert(fs.readFileSync(path.join(__dirname, '..', 'frontend/js/modules/producao.js'), 'utf8').includes("user.role === 'CLIENTE'"), 'client production UI must be read-only');
+assert(fs.existsSync(path.join(__dirname, '..', 'docs', 'MASTER_COMPLIANCE.md')), 'master compliance documentation must exist');
