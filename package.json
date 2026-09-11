@@ -1,6 +1,6 @@
 {
   "name": "gestao3d",
-  "version": "3.2.1",
+  "version": "3.2.2",
   "description": "Gestão de empresa de impressão 3D",
   "main": "server.js",
   "scripts": {

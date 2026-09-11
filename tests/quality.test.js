@@ -65,7 +65,7 @@ test('frontend mantém PWA e tratamento responsivo', () => {
   const sw = read('frontend/sw.js');
   assert.match(html, /manifest\.webmanifest/);
   assert.match(css, /@media \(max-width: 768px\)/);
-  assert.match(sw, /gestao3d-v3-2-1-static/);
+  assert.match(sw, /gestao3d-v3-2-2-static/);
 });
 
 test('todos os JavaScript da aplicação têm sintaxe válida', () => {

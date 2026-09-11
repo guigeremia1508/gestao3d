@@ -55,94 +55,12 @@ function openModal(title, bodyHtml, footerHtml, lg = false) {
 }
 function closeModal() { const el=document.getElementById('modal-overlay'); if(!el)return; const prev=el.dataset.previousFocus ? document.getElementById(el.dataset.previousFocus) : null; el.remove(); prev?.focus(); }
 
-// ─── LOGIN / CADASTRO / LOGOUT ───────────────────────────────────────────────
-function showLogin() {
-  R('register-form').style.display = 'none';
-  R('login-form').style.display = 'grid';
-  R('register-error').style.display = 'none';
-}
-function showRegister() {
-  R('login-form').style.display = 'none';
-  R('register-form').style.display = 'grid';
-  R('login-error').style.display = 'none';
-  R('register-name').focus();
-}
-
-function saveSession(data) {
-  API.csrfToken = data?.csrfToken || null;
-  if (data?.user) localStorage.setItem('g3d_user', JSON.stringify(data.user));
-  if (data?.user) startApp(data.user);
-}
-
-async function doLogin() {
-  const email = R('login-email').value.trim();
-  const pass = R('login-pass').value;
-  const err = R('login-error');
-  const button = document.querySelector('#login-form button.btn-primary');
-  err.style.display = 'none';
-  if (!email || !pass) { err.textContent = 'Informe o e-mail e a senha.'; err.style.display = 'block'; return; }
-  if (button) { button.disabled = true; button.dataset.originalText = button.textContent; button.textContent = 'Entrando...'; }
-  try {
-    // Login/cadastro não dependem de CSRF porque ainda não existe sessão autenticada.
-    // O CSRF é emitido pelo próprio endpoint e passa a proteger as operações seguintes.
-    const data = await fetch('/api/auth/login', {
-      method: 'POST', credentials:'same-origin', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password: pass })
-    }).then(async r => {
-      const json = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(json.error || `Erro ao entrar (${r.status})`);
-      return json;
-    });
-    saveSession(data);
-  } catch (e) {
-    err.textContent = e.message || 'Não foi possível entrar.';
-    err.style.display = 'block';
-  } finally {
-    if (button) { button.disabled = false; button.textContent = button.dataset.originalText || 'Entrar'; }
-  }
-}
-
-async function doRegister() {
-  const name = R('register-name').value.trim();
-  const email = R('register-email').value.trim();
-  const password = R('register-pass').value;
-  const confirmPassword = R('register-pass-confirm').value;
-  const err = R('register-error');
-  err.style.display = 'none';
-
-  if (password !== confirmPassword) {
-    err.textContent = 'As senhas não são iguais';
-    err.style.display = 'block';
-    return;
-  }
-
-  try {
-    const data = await fetch('/api/auth/register', {
-      method: 'POST', credentials:'same-origin', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, email, password, invite: R('register-invite').value.trim() })
-    }).then(async r => {
-      const json = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(json.error || `Erro ao criar conta (${r.status})`);
-      return json;
-    });
-    saveSession(data);
-  } catch (e) {
-    err.textContent = e.message;
-    err.style.display = 'block';
-  }
-}
-
-R('login-pass').addEventListener('keydown', e => e.key === 'Enter' && doLogin());
-R('register-pass-confirm').addEventListener('keydown', e => e.key === 'Enter' && doRegister());
-
-// The login screen uses inline onclick handlers. Expose the handlers explicitly
-// so they remain reliable across browser execution contexts and future refactors.
-Object.assign(window, { showLogin, showRegister, doLogin, doRegister });
+// Login and registration are handled by frontend/js/auth.js.
 
 async function doLogout() {
   try { if (API.csrfToken || document.cookie.includes('g3d_csrf=')) await API.post('/auth/logout'); } catch {}
   localStorage.removeItem('g3d_user'); API.csrfToken=null; closeSearch(); closeModal();
-  R('app').style.display='none'; R('login-screen').style.display='flex'; showLogin();
+  R('app').style.display='none'; R('login-screen').style.display='flex'; window.showLogin?.();
 }
 
 document.addEventListener('keydown', e => { if(e.key==='Escape' && document.getElementById('modal-overlay')) closeModal(); });
@@ -308,8 +226,8 @@ window.globalSearch=globalSearch;window.closeSearch=closeSearch;window.openNotif
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(()=>{});
   try {
       const session = await API.get('/auth/me');
-    if(session){ localStorage.setItem('g3d_user',JSON.stringify(session)); startApp(session); } else showLogin();
-  } catch { localStorage.removeItem('g3d_user'); showLogin(); }
+    if(session){ localStorage.setItem('g3d_user',JSON.stringify(session)); startApp(session); } else window.showLogin?.();
+  } catch { localStorage.removeItem('g3d_user'); window.showLogin?.(); }
 })();
 
 // Theme is also initialized before login so the preference is preserved.
