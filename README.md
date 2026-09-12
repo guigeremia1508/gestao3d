@@ -67,6 +67,6 @@ A aplicação cria automaticamente o primeiro ADMIN somente quando o banco ainda
 
 
 ## Versão
-3.3.0
+3.3.1
 
 Inclui cadastro inteligente de produtos com impressora/filamento/componentes, seleção de rolo nos pedidos, comprovante copiável para impressora térmica, unidades líquidas nos consumíveis e consumo automático de componentes na finalização da produção.

@@ -74,9 +74,10 @@ async function deleteImpressora(id) {
 }
 
 async function openManutencaoModal(pid,pname,planId=0){
-  const [list,tools,parts,plans] = await Promise.all([
-    API.get(`/printers/${pid}/maintenance`),API.get('/consumables'),API.get('/parts'),API.get('/maintenance/plans')
-  ]);
+  const reqs=await Promise.allSettled([API.get(`/printers/${pid}/maintenance`),API.get('/consumables'),API.get('/parts'),API.get('/maintenance/plans')]);
+  const [list,tools,parts,plans]=reqs.map((r)=>r.status==='fulfilled'?r.value:[]);
+  const failures=reqs.filter(r=>r.status==='rejected').map(r=>r.reason?.message||'falha');
+  if(failures.length)toast(`Alguns dados da manutenção não carregaram: ${failures.join(' | ')}`,'err');
   const mine=plans.filter(p=>Number(p.printer_id)===Number(pid));
   const selectedPlan=mine.find(p=>Number(p.id)===Number(planId));
   const planOptions=mine.map(p=>`<option value="${p.id}" data-task="${String(p.task).replace(/"/g,'&quot;')}" ${selectedPlan&&Number(selectedPlan.id)===Number(p.id)?'selected':''}>${p.task} — ${p.status==='ATRASADA'?'ATRASADA':p.hours_remaining!=null?'faltam '+num(p.hours_remaining,1)+'h':p.status}</option>`).join('');
@@ -115,7 +116,7 @@ async function saveManutencao(pid){
  try{await API.post(`/printers/${pid}/maintenance`,body);closeModal();toast(planId?'Manutenção registrada e próximo ciclo atualizado!':'Manutenção registrada e estoque atualizado!');pageRenderers.impressoras()}catch(e){toast(e.message,'err')}
 }
 async function openPlanModal(pid,pname){
-  const plans=await API.get('/maintenance/plans');
+  let plans=[]; try{plans=await API.get('/maintenance/plans')}catch(e){return toast(`Não foi possível carregar os planos: ${e.message}`,'err')}
   const mine=plans.filter(p=>Number(p.printer_id)===Number(pid));
   openModal(`📅 Plano Preventivo — ${pname}`,`
     <div class="form-grid" style="margin-bottom:1rem">

@@ -18,7 +18,7 @@ app.use('/api',(err,req,res,next)=>{console.error('API error:',err);const status
 app.use('/api',(req,res)=>res.status(404).json({error:'Rota da API não encontrada.'}));
 app.get('*',(req,res)=>res.sendFile(path.join(__dirname,'frontend','index.html')));
 let server;
-initDb().then(()=>{server=app.listen(PORT,'0.0.0.0',()=>console.log(`🖨️ Gestão 3D v3.3.0 rodando na porta ${PORT}`));}).catch(e=>{console.error('Erro ao inicializar PostgreSQL:',e);process.exit(1)});
+initDb().then(()=>{server=app.listen(PORT,'0.0.0.0',()=>console.log(`🖨️ Gestão 3D v3.3.1 rodando na porta ${PORT}`));}).catch(e=>{console.error('Erro ao inicializar PostgreSQL:',e);process.exit(1)});
 
 async function shutdown(signal){console.log(`Encerrando por ${signal}...`);try{if(server)await new Promise(resolve=>server.close(resolve));await getPool().end();}catch(e){console.error('Erro no encerramento:',e.message);}finally{process.exit(0);}}
 process.on('SIGTERM',()=>shutdown('SIGTERM'));

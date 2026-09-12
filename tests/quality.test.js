@@ -71,9 +71,9 @@ test('healthcheck e encerramento limpo existem', () => {
 
 test('autenticação carrega a aplicação antes dos módulos', () => {
   const html = fs.readFileSync(path.join(ROOT, 'frontend/index.html'), 'utf8');
-  assert.ok(html.indexOf('/js/app.js?v=3.3.0') < html.indexOf('/js/modules/dashboard.js?v=3.3.0'));
-  assert.ok(html.indexOf('/js/auth.js?v=3.3.0') < html.indexOf('/js/bootstrap.js?v=3.3.0'));
-  assert.ok(html.includes('/js/bootstrap.js?v=3.3.0'));
+  assert.ok(html.indexOf('/js/app.js?v=3.3.1') < html.indexOf('/js/modules/dashboard.js?v=3.3.1'));
+  assert.ok(html.indexOf('/js/auth.js?v=3.3.1') < html.indexOf('/js/bootstrap.js?v=3.3.1'));
+  assert.ok(html.includes('/js/bootstrap.js?v=3.3.1'));
   const app = fs.readFileSync(path.join(ROOT, 'frontend/js/app.js'), 'utf8');
   assert.ok(!app.includes("API.get('/auth/me')"));
   assert.ok(fs.existsSync(path.join(ROOT, 'frontend/js/bootstrap.js')));
@@ -150,4 +150,33 @@ test('manutenção é defensiva e aceita manutenção manual sem estoque',()=>{
   assert.match(printers,/plan_id/);
   assert.match(api,/if\(q>0\)await consumeItem/);
   assert.match(api,/Data de conclusão inválida/);
+});
+
+test('schema possui migração de compatibilidade idempotente para instalações antigas', () => {
+  const fs = require('node:fs');
+  const schema = read('database/init.js');
+  assert.ok(schema.includes('async function ensureColumns(client)'));
+  assert.ok(schema.includes('ALTER TABLE products ADD COLUMN IF NOT EXISTS printer_id'));
+  assert.ok(schema.includes('maintenance_plans: {') && schema.includes('interval_hours:'));
+  assert.ok(schema.includes('tool_consumables: {') && schema.includes('unit:'));
+});
+
+test('produtos fazem validação de código duplicado e cálculo de preço no backend', () => {
+  const api = read('routes/api.js');
+  assert.ok(api.includes('Código de produto já cadastrado'));
+  assert.ok(api.includes('finalTotal*(1+markupPercent/100)'));
+  assert.ok(api.includes('normalizeProductComponents(tx'));
+});
+
+test('notificações toleram falha isolada de uma categoria', () => {
+  const api = read('routes/api.js');
+  assert.ok(api.includes('Promise.allSettled(['));
+  assert.ok(api.includes("r.status==='fulfilled'"));
+});
+
+test('interface de produtos e manutenção não derruba a página por falha auxiliar', () => {
+  const products = read('frontend/js/modules/produtos.js');
+  const printer = read('frontend/js/modules/impressoras.js');
+  assert.ok(products.includes('Promise.allSettled(['));
+  assert.ok(printer.includes('Promise.allSettled(['));
 });

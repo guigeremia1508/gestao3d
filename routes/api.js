@@ -178,43 +178,96 @@ router.delete('/quotes/:id',adminOnly,async(req,res,next)=>{try{await dbRun('UPD
 
 // Products/orders/production
 async function getProductSettings(){const rows=await dbAll('SELECT key,value FROM settings');return Object.fromEntries(rows.map(x=>[x.key,x.value]));}
-async function normalizeProductComponents(components){
- const out=[]; for(const raw of(Array.isArray(components)?components:[])){
-  const quantity=n(raw.quantity); if(quantity<=0) continue;
-  const kind=raw.kind==='consumable'?'consumable':'part';
-  if(kind==='part'){const item=await dbGet('SELECT id,name,unit_cost FROM small_parts WHERE id=$1 AND deleted_at IS NULL',[raw.item_id]);if(!item)throw Object.assign(new Error('Peça não encontrada'),{status:404});out.push({kind,item_id:Number(item.id),quantity,unit_cost:n(item.unit_cost),total_cost:quantity*n(item.unit_cost)});}
-  else {const item=await dbGet('SELECT id,name,unit,unit_cost FROM tool_consumables WHERE id=$1 AND deleted_at IS NULL',[raw.item_id]);if(!item)throw Object.assign(new Error('Consumível não encontrado'),{status:404});out.push({kind,item_id:Number(item.id),quantity,unit_cost:n(item.unit_cost),total_cost:quantity*n(item.unit_cost)});}
- } return out;
+async function normalizeProductComponents(tx,components){
+ const map=new Map();
+ for(const raw of(Array.isArray(components)?components:[])){
+  const quantity=n(raw?.quantity); if(quantity<=0) continue;
+  const kind=raw?.kind==='consumable'?'consumable':'part';
+  const itemId=Number(raw?.item_id);
+  if(!Number.isInteger(itemId)||itemId<=0)throw Object.assign(new Error('Componente inválido'),{status:400});
+  const key=`${kind}:${itemId}`;
+  const table=kind==='part'?'small_parts':'tool_consumables';
+  const item=kind==='part'
+   ? await tx.get('SELECT id,name,unit_cost FROM small_parts WHERE id=$1 AND deleted_at IS NULL',[itemId])
+   : await tx.get('SELECT id,name,unit,unit_cost FROM tool_consumables WHERE id=$1 AND deleted_at IS NULL',[itemId]);
+  if(!item)throw Object.assign(new Error(kind==='part'?'Peça não encontrada':'Consumível não encontrado'),{status:404});
+  const previous=map.get(key);
+  const totalQty=(previous?.quantity||0)+quantity;
+  const unitCost=n(item.unit_cost);
+  map.set(key,{kind,item_id:Number(item.id),quantity:totalQty,unit_cost:unitCost,total_cost:totalQty*unitCost});
+ }
+ return [...map.values()];
 }
-async function calculateProductData(b,components){
- const settings=await getProductSettings();
- const roll=b.material_roll_id?await dbGet('SELECT * FROM material_rolls WHERE id=$1 AND deleted_at IS NULL',[b.material_roll_id]):null;
+async function calculateProductData(tx,b,components){
+ const settingsRows=await tx.all('SELECT key,value FROM settings');
+ const settings=Object.fromEntries(settingsRows.map(x=>[x.key,x.value]));
+ const roll=b.material_roll_id?await tx.get('SELECT * FROM material_rolls WHERE id=$1 AND deleted_at IS NULL',[b.material_roll_id]):null;
  if(b.material_roll_id&&!roll)throw Object.assign(new Error('Rolo de filamento não encontrado'),{status:404});
- const printer=b.printer_id?await dbGet('SELECT * FROM printers WHERE id=$1 AND deleted_at IS NULL',[b.printer_id]):null;
+ const printer=b.printer_id?await tx.get('SELECT * FROM printers WHERE id=$1 AND deleted_at IS NULL',[b.printer_id]):null;
  if(b.printer_id&&!printer)throw Object.assign(new Error('Impressora não encontrada'),{status:404});
- const weight=n(b.weight_g),minutes=n(b.print_time_min),development=n(b.development_time_min!==undefined?b.development_time_min:settings.default_development_time_min);
+ const weight=Math.max(0,n(b.weight_g)),minutes=Math.max(0,n(b.print_time_min));
+ const development=b.development_time_min===undefined||b.development_time_min===''?n(settings.default_development_time_min):Math.max(0,n(b.development_time_min));
  const hours=minutes/60;
- const material=roll?weight*n(roll.cost_per_gram):n(b.cost_material);
- const energy=printer?(n(printer.power_watts)/1000)*hours*n(settings.energy_cost_kwh):n(b.cost_energy);
+ const material=roll?weight*n(roll.cost_per_gram):Math.max(0,n(b.cost_material));
+ const energy=printer?(n(printer.power_watts)/1000)*hours*n(settings.energy_cost_kwh):Math.max(0,n(b.cost_energy));
  const machine=hours*n(settings.machine_cost_hour);
  const maintenanceAuto=hours*n(settings.maintenance_cost_hour);
  const labor=development/60*n(settings.labor_cost_hour);
- const packaging=n(b.cost_packaging!==undefined?b.cost_packaging:settings.default_packaging_cost);
- const finishing=n(b.cost_finishing!==undefined?b.cost_finishing:settings.default_finishing_cost);
+ const packaging=b.cost_packaging===undefined||b.cost_packaging===''?n(settings.default_packaging_cost):Math.max(0,n(b.cost_packaging));
+ const finishing=b.cost_finishing===undefined||b.cost_finishing===''?n(settings.default_finishing_cost):Math.max(0,n(b.cost_finishing));
  const parts=components.reduce((a,x)=>a+x.total_cost,0);
- const total=material+energy+machine+maintenance+labor+packaging+finishing+parts;
  const manual=bool(b.costs_manual);
- const costMaterial=manual?n(b.cost_material):material; const costEnergy=manual?n(b.cost_energy):energy; const costMachine=manual?n(b.cost_machine):machine;
- const costLabor=manual?n(b.cost_labor):labor; const costMaintenance=manual?n(b.cost_maintenance):maintenanceAuto; const costPackaging=packaging; const costFinishing=finishing;
- const finalParts=parts; const finalTotal=costMaterial+costEnergy+costMachine+costMaintenance+costLabor+costPackaging+costFinishing+finalParts;
- const price=n(b.price); const margin=price>0?(price-finalTotal)/price*100:0; const markup=finalTotal>0?(price-finalTotal)/finalTotal*100:0;
- return {roll,printer,material_type:roll?roll.type:(b.material_type||null),material:costMaterial,energy:costEnergy,machine:costMachine,maintenance:costMaintenance,labor:costLabor,packaging:costPackaging,finishing:costFinishing,parts:finalParts,total:finalTotal,price,margin,markup,development_time_min:development};
+ const costMaterial=manual?Math.max(0,n(b.cost_material)):material;
+ const costEnergy=manual?Math.max(0,n(b.cost_energy)):energy;
+ const costMachine=manual?Math.max(0,n(b.cost_machine)):machine;
+ const costLabor=manual?Math.max(0,n(b.cost_labor)):labor;
+ const costMaintenance=manual?Math.max(0,n(b.cost_maintenance)):maintenanceAuto;
+ const finalTotal=costMaterial+costEnergy+costMachine+costMaintenance+costLabor+packaging+finishing+parts;
+ const markupPercent=Math.max(0,n(b.markup_percent!==undefined?b.markup_percent:settings.default_markup_percent));
+ const explicitPrice=b.price!==undefined&&b.price!==''?Math.max(0,n(b.price)):0;
+ const price=explicitPrice>0?explicitPrice:finalTotal*(1+markupPercent/100);
+ const margin=price>0?(price-finalTotal)/price*100:0;
+ const markup=finalTotal>0?(price-finalTotal)/finalTotal*100:0;
+ return {roll,printer,material_type:roll?roll.type:(b.material_type||null),material:costMaterial,energy:costEnergy,machine:costMachine,maintenance:costMaintenance,labor:costLabor,packaging,finishing,parts,total:finalTotal,price,margin,markup,development_time_min:development};
 }
-async function replaceProductComponents(tx,productId,components){await tx.run('DELETE FROM product_components WHERE product_id=$1',[productId]);for(const c of components){await tx.run('INSERT INTO product_components(product_id,part_id,consumable_id,quantity,unit_cost,total_cost) VALUES($1,$2,$3,$4,$5,$6)',[productId,c.kind==='part'?c.item_id:null,c.kind==='consumable'?c.item_id:null,c.quantity,c.unit_cost,c.total_cost]);}}
-async function saveProduct(b,id){return withTransaction(async tx=>{const normalized=await normalizeProductComponents(b.components);const d=await calculateProductData(b,normalized);if(!id){const r=await tx.get('INSERT INTO products(code,name,project_id,version_id,material_type,weight_g,print_time_min,cost_material,cost_energy,cost_machine,cost_labor,cost_packaging,cost_finishing,cost_parts,cost_project_parts,cost_maintenance,cost_total,price,markup,margin,printer_id,material_roll_id,development_time_min,costs_manual,notes) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25) RETURNING id',[b.code||null,b.name,b.project_id||null,b.version_id||null,d.material_type,d.weight||n(b.weight_g),n(b.print_time_min),d.material,d.energy,d.machine,d.labor,d.packaging,d.finishing,d.parts,0,d.maintenance,d.total,d.price,d.markup,d.margin,b.printer_id||null,b.material_roll_id||null,d.development_time_min,bool(b.costs_manual),b.notes||null]);await replaceProductComponents(tx,r.id,normalized);if(b.project_id)await refreshProjectProductCosts(tx,b.project_id);return Number(r.id);}
- const exists=await tx.get('SELECT id FROM products WHERE id=$1 AND deleted_at IS NULL',[id]);if(!exists)throw Object.assign(new Error('Produto não encontrado'),{status:404});
- await tx.run('UPDATE products SET code=$1,name=$2,project_id=$3,version_id=$4,material_type=$5,weight_g=$6,print_time_min=$7,cost_material=$8,cost_energy=$9,cost_machine=$10,cost_labor=$11,cost_packaging=$12,cost_finishing=$13,cost_parts=$14,cost_project_parts=$15,cost_maintenance=$16,cost_total=$17,price=$18,markup=$19,margin=$20,printer_id=$21,material_roll_id=$22,development_time_min=$23,costs_manual=$24,notes=$25,active=$26 WHERE id=$27',[b.code||null,b.name,b.project_id||null,b.version_id||null,d.material_type,d.weight||n(b.weight_g),n(b.print_time_min),d.material,d.energy,d.machine,d.labor,d.packaging,d.finishing,d.parts,0,d.maintenance,d.total,d.price,d.markup,d.margin,b.printer_id||null,b.material_roll_id||null,d.development_time_min,bool(b.costs_manual),b.notes||null,b.active!==false,id]);await replaceProductComponents(tx,id,normalized);if(b.project_id)await refreshProjectProductCosts(tx,b.project_id);return Number(id);});}
-router.get('/products',async(req,res,next)=>{try{res.json(await dbAll(`SELECT pr.*,p.name project_name,prn.name printer_name,r.code roll_code,r.current_weight_g roll_current_weight,r.cost_per_gram roll_cost_per_gram,COALESCE((SELECT SUM(pc.total_cost) FROM product_components pc WHERE pc.product_id=pr.id),0) component_cost FROM products pr LEFT JOIN projects p ON p.id=pr.project_id LEFT JOIN printers prn ON prn.id=pr.printer_id LEFT JOIN material_rolls r ON r.id=pr.material_roll_id WHERE pr.deleted_at IS NULL ORDER BY pr.name`))}catch(e){next(e)}});
+async function replaceProductComponents(tx,productId,components){
+ await tx.run('DELETE FROM product_components WHERE product_id=$1',[productId]);
+ for(const c of components){
+  await tx.run('INSERT INTO product_components(product_id,part_id,consumable_id,quantity,unit_cost,total_cost) VALUES($1,$2,$3,$4,$5,$6)',[productId,c.kind==='part'?c.item_id:null,c.kind==='consumable'?c.item_id:null,c.quantity,c.unit_cost,c.total_cost]);
+ }
+}
+async function saveProduct(b,id){return withTransaction(async tx=>{
+ const code=String(b.code||'').trim()||null;
+ const name=String(b.name||'').trim();
+ if(!name)throw Object.assign(new Error('Nome obrigatório'),{status:400});
+ if(code){const dup=await tx.get('SELECT id FROM products WHERE LOWER(code)=LOWER($1) AND deleted_at IS NULL AND ($2::bigint IS NULL OR id<>$2)',[code,id||null]);if(dup)throw Object.assign(new Error('Código de produto já cadastrado'),{status:409});}
+ const projectId=b.project_id?Number(b.project_id):null;
+ const versionId=b.version_id?Number(b.version_id):null;
+ const printerId=b.printer_id?Number(b.printer_id):null;
+ const rollId=b.material_roll_id?Number(b.material_roll_id):null;
+ for(const [label,value] of [['projeto',projectId],['versão',versionId],['impressora',printerId],['rolo',rollId]]){if(value!==null&&(!Number.isInteger(value)||value<=0))throw Object.assign(new Error(`${label} inválido`),{status:400});}
+ if(projectId && !(await tx.get('SELECT id FROM projects WHERE id=$1 AND deleted_at IS NULL',[projectId])))throw Object.assign(new Error('Projeto não encontrado'),{status:404});
+ if(versionId && !(await tx.get('SELECT id FROM project_versions WHERE id=$1 AND project_id=$2',[versionId,projectId])))throw Object.assign(new Error('Versão não encontrada para o projeto selecionado'),{status:404});
+ const normalized=await normalizeProductComponents(tx,b.components);
+ const weight=n(b.weight_g),minutes=n(b.print_time_min);
+ if(weight>0 && !rollId && !bool(b.costs_manual))throw Object.assign(new Error('Selecione o rolo de filamento para calcular o custo do material'),{status:400});
+ if(minutes>0 && !printerId && !bool(b.costs_manual))throw Object.assign(new Error('Selecione a impressora para calcular o custo de energia'),{status:400});
+ const d=await calculateProductData(tx,{...b,project_id:projectId,version_id:versionId,printer_id:printerId,material_roll_id:rollId},normalized);
+ if(!id){
+  const r=await tx.get('INSERT INTO products(code,name,project_id,version_id,material_type,weight_g,print_time_min,cost_material,cost_energy,cost_machine,cost_labor,cost_packaging,cost_finishing,cost_parts,cost_project_parts,cost_maintenance,cost_total,price,markup,margin,printer_id,material_roll_id,development_time_min,costs_manual,notes) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25) RETURNING id',[code,name,projectId,versionId,d.material_type,d.weight||n(b.weight_g),n(b.print_time_min),d.material,d.energy,d.machine,d.labor,d.packaging,d.finishing,d.parts,0,d.maintenance,d.total,d.price,d.markup,d.margin,printerId,rollId,d.development_time_min,bool(b.costs_manual),b.notes||null]);
+  await replaceProductComponents(tx,r.id,normalized);
+  if(projectId)await refreshProjectProductCosts(tx,projectId);
+  return Number(r.id);
+ }
+ const exists=await tx.get('SELECT * FROM products WHERE id=$1 AND deleted_at IS NULL FOR UPDATE',[id]);
+ if(!exists)throw Object.assign(new Error('Produto não encontrado'),{status:404});
+ await tx.run('UPDATE products SET code=$1,name=$2,project_id=$3,version_id=$4,material_type=$5,weight_g=$6,print_time_min=$7,cost_material=$8,cost_energy=$9,cost_machine=$10,cost_labor=$11,cost_packaging=$12,cost_finishing=$13,cost_parts=$14,cost_project_parts=$15,cost_maintenance=$16,cost_total=$17,price=$18,markup=$19,margin=$20,printer_id=$21,material_roll_id=$22,development_time_min=$23,costs_manual=$24,notes=$25,active=$26 WHERE id=$27',[code,name,projectId,versionId,d.material_type,d.weight||n(b.weight_g),n(b.print_time_min),d.material,d.energy,d.machine,d.labor,d.packaging,d.finishing,d.parts,0,d.maintenance,d.total,d.price,d.markup,d.margin,printerId,rollId,d.development_time_min,bool(b.costs_manual),b.notes||null,b.active!==false,id]);
+ await replaceProductComponents(tx,id,normalized);
+ const projects=new Set([exists.project_id,projectId].filter(Boolean).map(Number));
+ for(const pid of projects)await refreshProjectProductCosts(tx,pid);
+ return Number(id);
+});}
+router.get('/products',async(req,res,next)=>{try{res.json(await dbAll(`SELECT pr.*,p.name project_name,prn.name printer_name,m.type roll_material_type,m.brand roll_brand,m.color roll_color,r.code roll_code,r.current_weight_g roll_current_weight,r.cost_per_gram roll_cost_per_gram,COALESCE((SELECT SUM(pc.total_cost) FROM product_components pc WHERE pc.product_id=pr.id),0) component_cost FROM products pr LEFT JOIN projects p ON p.id=pr.project_id LEFT JOIN printers prn ON prn.id=pr.printer_id LEFT JOIN material_rolls r ON r.id=pr.material_roll_id LEFT JOIN materials m ON m.id=r.material_id WHERE pr.deleted_at IS NULL ORDER BY pr.name`))}catch(e){next(e)}});
 router.get('/products/:id/components',async(req,res,next)=>{try{res.json(await dbAll(`SELECT pc.*,sp.name part_name,sp.type part_type,sp.size part_size,sp.unit_cost part_unit_cost,tc.name consumable_name,tc.unit consumable_unit,tc.unit_cost consumable_unit_cost,CASE WHEN pc.part_id IS NOT NULL THEN 'part' ELSE 'consumable' END kind FROM product_components pc LEFT JOIN small_parts sp ON sp.id=pc.part_id LEFT JOIN tool_consumables tc ON tc.id=pc.consumable_id WHERE pc.product_id=$1 ORDER BY pc.id`,[req.params.id]))}catch(e){next(e)}});
 router.post('/products',adminOnly,async(req,res,next)=>{try{const b=req.body||{};if(!b.name)return res.status(400).json({error:'Nome obrigatório'});res.json({id:await saveProduct(b,null)})}catch(e){next(e)}});
 router.put('/products/:id',adminOnly,async(req,res,next)=>{try{res.json({ok:true,id:await saveProduct(req.body||{},Number(req.params.id))})}catch(e){next(e)}});
@@ -332,13 +385,13 @@ router.get('/search',async(req,res,next)=>{try{const q=String(req.query.q||'').t
   ...(await dbAll("SELECT 'Produto' kind,id,name title,code subtitle,created_at FROM products WHERE deleted_at IS NULL AND (name ILIKE $1 OR COALESCE(code,'') ILIKE $1) ORDER BY created_at DESC LIMIT 8",[like])).map(x=>({...x,route:'produtos'})),
   ...(await dbAll("SELECT 'Impressora' kind,id,name title,model subtitle,created_at FROM printers WHERE deleted_at IS NULL AND (name ILIKE $1 OR COALESCE(model,'') ILIKE $1 OR COALESCE(serial,'') ILIKE $1) ORDER BY created_at DESC LIMIT 8",[like])).map(x=>({...x,route:'impressoras'})),
 ];res.json(rows.slice(0,20));}catch(e){next(e)}});
-router.get('/notifications',async(req,res,next)=>{try{const [stock,orders,payments,maintenance,failed]=await Promise.all([
+router.get('/notifications',async(req,res,next)=>{try{const results=await Promise.allSettled([
  dbAll("SELECT 'ESTOQUE' type, (m.type || COALESCE(' — '||m.brand,'') || COALESCE(' — '||m.color,'')) title, r.current_weight_g detail FROM material_rolls r JOIN materials m ON m.id=r.material_id WHERE r.deleted_at IS NULL AND r.current_weight_g<=r.min_stock_g ORDER BY r.current_weight_g ASC LIMIT 10"),
  dbAll("SELECT 'PEDIDO_ATRASADO' type,'Pedido #'||id title,COALESCE(due_date::text,'') detail FROM orders WHERE deleted_at IS NULL AND due_date<CURRENT_DATE AND status NOT IN ('ENTREGUE','CANCELADO') ORDER BY due_date LIMIT 10"),
  dbAll("SELECT 'PAGAMENTO_ATRASADO' type,description title,COALESCE(due_date::text,'') detail FROM transactions WHERE deleted_at IS NULL AND paid=false AND due_date<CURRENT_DATE ORDER BY due_date LIMIT 10"),
  dbAll("SELECT 'MANUTENCAO' type,p.name||' — '||mp.task title,COALESCE(mp.next_due_date::text,CASE WHEN mp.next_due_hours IS NOT NULL THEN ROUND(mp.next_due_hours-(p.total_hours+COALESCE(t.test_hours,0)),1)::text||'h' END,'') detail FROM maintenance_plans mp JOIN printers p ON p.id=mp.printer_id LEFT JOIN (SELECT printer_id,COALESCE(SUM(real_time_min)/60,0) test_hours FROM tests WHERE result<>'CANCELADO' GROUP BY printer_id) t ON t.printer_id=p.id WHERE mp.active=true AND ((mp.next_due_date IS NOT NULL AND mp.next_due_date<=CURRENT_DATE+7) OR (mp.next_due_hours IS NOT NULL AND p.total_hours+COALESCE(t.test_hours,0)>=mp.next_due_hours-20)) LIMIT 10"),
  dbAll("SELECT 'IMPRESSAO_FALHOU' type,'Impressão #'||id title,COALESCE(failure_type,'Falha') detail FROM production_jobs WHERE result='FALHA' ORDER BY created_at DESC LIMIT 10")
-]);res.json([...stock,...orders,...payments,...maintenance,...failed]);}catch(e){next(e)}});
+]);const items=results.flatMap(r=>r.status==='fulfilled'&&Array.isArray(r.value)?r.value:[]);res.json(items);}catch(e){next(e)}});
 router.get('/audit-logs',adminOnly,async(req,res,next)=>{try{const limit=Math.min(200,Math.max(1,Number(req.query.limit)||100));const offset=Math.max(0,Number(req.query.offset)||0);res.json(await dbAll(`SELECT a.id,a.action,a.entity,a.entity_id,a.result,a.ip,a.created_at,u.name user_name,u.email user_email FROM audit_logs a LEFT JOIN users u ON u.id=a.user_id ORDER BY a.created_at DESC LIMIT $1 OFFSET $2`,[limit,offset]));}catch(e){next(e)}});
 
 // Dashboard/reports
