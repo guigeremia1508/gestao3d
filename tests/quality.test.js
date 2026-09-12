@@ -56,7 +56,7 @@ test('segurança não inclui credencial padrão de produção', () => {
 test('backup e schema possuem tabelas críticas', () => {
   const api = read('routes/api.js');
   const schema = read('database/init.js');
-  for (const table of ['users','customers','projects','project_versions','tests','products','orders','production_jobs','transactions','quotes','audit_logs']) {
+  for (const table of ['users','customers','projects','project_versions','tests','products','product_components','orders','production_jobs','production_component_usages','transactions','quotes','audit_logs']) {
     assert.match(api, new RegExp(`'${table}'`));
     assert.match(schema, new RegExp(`CREATE TABLE IF NOT EXISTS ${table}`));
   }
@@ -71,9 +71,9 @@ test('healthcheck e encerramento limpo existem', () => {
 
 test('autenticação carrega a aplicação antes dos módulos', () => {
   const html = fs.readFileSync(path.join(ROOT, 'frontend/index.html'), 'utf8');
-  assert.ok(html.indexOf('/js/app.js?v=3.2.5') < html.indexOf('/js/modules/dashboard.js?v=3.2.5'));
-  assert.ok(html.indexOf('/js/auth.js?v=3.2.5') < html.indexOf('/js/bootstrap.js?v=3.2.5'));
-  assert.ok(html.includes('/js/bootstrap.js?v=3.2.5'));
+  assert.ok(html.indexOf('/js/app.js?v=3.3.0') < html.indexOf('/js/modules/dashboard.js?v=3.3.0'));
+  assert.ok(html.indexOf('/js/auth.js?v=3.3.0') < html.indexOf('/js/bootstrap.js?v=3.3.0'));
+  assert.ok(html.includes('/js/bootstrap.js?v=3.3.0'));
   const app = fs.readFileSync(path.join(ROOT, 'frontend/js/app.js'), 'utf8');
   assert.ok(!app.includes("API.get('/auth/me')"));
   assert.ok(fs.existsSync(path.join(ROOT, 'frontend/js/bootstrap.js')));
@@ -85,7 +85,7 @@ test('frontend mantém PWA e tratamento responsivo', () => {
   const sw = read('frontend/sw.js');
   assert.match(html, /manifest\.webmanifest/);
   assert.match(css, /@media \(max-width: 768px\)/);
-  assert.match(sw, /gestao3d-v3-2-5-static/);
+  assert.match(sw, /gestao3d-v3-3-0-static/);
 });
 
 
@@ -124,4 +124,30 @@ test('todos os JavaScript da aplicação têm sintaxe válida', () => {
     const r = spawnSync(process.execPath, ['--check', file], {encoding:'utf8'});
     assert.equal(r.status, 0, `${path.relative(ROOT,file)}: ${r.stderr||r.stdout}`);
   }
+});
+
+
+test('produtos calculam com impressora, rolo, desenvolvimento e componentes', () => {
+  const api=read('routes/api.js'), schema=read('database/init.js'), prod=read('frontend/js/modules/produtos.js');
+  assert.match(api,/product_components/); assert.match(api,/production_component_usages/);
+  assert.match(schema,/CREATE TABLE IF NOT EXISTS product_components/); assert.match(schema,/CREATE TABLE IF NOT EXISTS production_component_usages/);
+  assert.match(prod,/prod-printer_id/); assert.match(prod,/prod-material_roll_id/); assert.match(prod,/prod-development_time_min/); assert.match(prod,/prod-cost_maintenance/); assert.match(prod,/addProductComponentRow/);
+});
+
+test('pedidos selecionam rolo e possuem comprovante térmico copiável',()=>{
+  const api=read('routes/api.js'), orders=read('frontend/js/modules/pedidos.js'), schema=read('database/init.js');
+  assert.match(api,/roll_id/); assert.match(schema,/ALTER TABLE orders ADD COLUMN IF NOT EXISTS roll_id/); assert.match(orders,/ped-roll_id/); assert.match(orders,/copyOrderReceipt/);
+});
+
+test('consumíveis possuem unidades adequadas para sólidos e líquidos',()=>{
+  const tools=read('frontend/js/modules/ferramentas.js');
+  assert.match(tools,/Mililitro/); assert.match(tools,/Litro/); assert.match(tools,/Quilograma/);
+});
+
+test('manutenção é defensiva e aceita manutenção manual sem estoque',()=>{
+  const api=read('routes/api.js');
+  const printers=read('frontend/js/modules/impressoras.js');
+  assert.match(printers,/plan_id/);
+  assert.match(api,/if\(q>0\)await consumeItem/);
+  assert.match(api,/Data de conclusão inválida/);
 });

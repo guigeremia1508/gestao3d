@@ -64,3 +64,9 @@ Depois do deploy, faça um teste real no Railway de login, edição, produção,
 ### Primeiro acesso ADMIN
 
 A aplicação cria automaticamente o primeiro ADMIN somente quando o banco ainda não possui nenhum ADMIN. Para produção, defina `INITIAL_ADMIN_EMAIL` e `INITIAL_ADMIN_PASSWORD` nas Variables do serviço `gestao3d` no Railway. As credenciais não ficam gravadas no código nem no Git. Depois de criado o ADMIN, essas variáveis não alteram usuários existentes.
+
+
+## Versão
+3.3.0
+
+Inclui cadastro inteligente de produtos com impressora/filamento/componentes, seleção de rolo nos pedidos, comprovante copiável para impressora térmica, unidades líquidas nos consumíveis e consumo automático de componentes na finalização da produção.

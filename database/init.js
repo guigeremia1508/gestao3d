@@ -173,13 +173,25 @@ CREATE TABLE IF NOT EXISTS products (
   version_id BIGINT REFERENCES project_versions(id) ON DELETE SET NULL, material_type TEXT, weight_g NUMERIC(14,2) DEFAULT 0,
   print_time_min NUMERIC(14,2) DEFAULT 0, cost_material NUMERIC(14,2) DEFAULT 0, cost_energy NUMERIC(14,2) DEFAULT 0,
   cost_machine NUMERIC(14,2) DEFAULT 0, cost_labor NUMERIC(14,2) DEFAULT 0, cost_packaging NUMERIC(14,2) DEFAULT 0,
-  cost_finishing NUMERIC(14,2) DEFAULT 0, cost_parts NUMERIC(14,2) DEFAULT 0, cost_total NUMERIC(14,2) DEFAULT 0,
+  cost_finishing NUMERIC(14,2) DEFAULT 0, cost_parts NUMERIC(14,2) DEFAULT 0, cost_project_parts NUMERIC(14,2) DEFAULT 0, cost_maintenance NUMERIC(14,2) DEFAULT 0, cost_total NUMERIC(14,2) DEFAULT 0,
   price NUMERIC(14,2) DEFAULT 0, markup NUMERIC(14,2) DEFAULT 0, margin NUMERIC(14,2) DEFAULT 0,
+  printer_id BIGINT REFERENCES printers(id) ON DELETE SET NULL, material_roll_id BIGINT REFERENCES material_rolls(id) ON DELETE SET NULL,
+  development_time_min NUMERIC(14,2) DEFAULT 0, costs_manual BOOLEAN NOT NULL DEFAULT FALSE,
   active BOOLEAN DEFAULT TRUE, notes TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), deleted_at TIMESTAMPTZ
 );
+CREATE TABLE IF NOT EXISTS product_components (
+  id BIGSERIAL PRIMARY KEY, product_id BIGINT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  part_id BIGINT REFERENCES small_parts(id) ON DELETE RESTRICT, consumable_id BIGINT REFERENCES tool_consumables(id) ON DELETE RESTRICT,
+  quantity NUMERIC(14,3) NOT NULL, unit_cost NUMERIC(14,4) NOT NULL DEFAULT 0, total_cost NUMERIC(14,4) NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT product_component_one_source CHECK (((part_id IS NOT NULL)::int + (consumable_id IS NOT NULL)::int) = 1)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_product_components_product_part ON product_components(product_id,part_id) WHERE part_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_product_components_product_consumable ON product_components(product_id,consumable_id) WHERE consumable_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_product_components_product ON product_components(product_id);
 CREATE TABLE IF NOT EXISTS orders (
   id BIGSERIAL PRIMARY KEY, customer_id BIGINT REFERENCES customers(id) ON DELETE SET NULL, product_id BIGINT REFERENCES products(id) ON DELETE SET NULL,
-  quantity INTEGER DEFAULT 1, material TEXT, unit_price NUMERIC(14,2) DEFAULT 0, discount NUMERIC(14,2) DEFAULT 0, total NUMERIC(14,2) DEFAULT 0,
+  quantity INTEGER DEFAULT 1, material TEXT, roll_id BIGINT REFERENCES material_rolls(id) ON DELETE SET NULL, unit_price NUMERIC(14,2) DEFAULT 0, discount NUMERIC(14,2) DEFAULT 0, total NUMERIC(14,2) DEFAULT 0,
   payment_method TEXT, due_date DATE, notes TEXT, status TEXT NOT NULL DEFAULT 'ORCAMENTO', created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), deleted_at TIMESTAMPTZ
 );
 CREATE TABLE IF NOT EXISTS production_jobs (
@@ -190,6 +202,15 @@ CREATE TABLE IF NOT EXISTS production_jobs (
   waste_g NUMERIC(14,2) DEFAULT 0, started_at TIMESTAMPTZ, finished_at TIMESTAMPTZ, result TEXT, failure_type TEXT, failure_cause TEXT,
   status TEXT NOT NULL DEFAULT 'AGUARDANDO', notes TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+CREATE TABLE IF NOT EXISTS production_component_usages (
+  id BIGSERIAL PRIMARY KEY, production_id BIGINT NOT NULL REFERENCES production_jobs(id) ON DELETE CASCADE,
+  product_component_id BIGINT REFERENCES product_components(id) ON DELETE SET NULL,
+  component_kind TEXT NOT NULL, component_id BIGINT NOT NULL, quantity NUMERIC(14,3) NOT NULL,
+  unit_cost NUMERIC(14,4) NOT NULL DEFAULT 0, total_cost NUMERIC(14,4) NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(production_id,product_component_id)
+);
+CREATE INDEX IF NOT EXISTS idx_production_component_usages_production ON production_component_usages(production_id);
 CREATE TABLE IF NOT EXISTS transactions (
   id BIGSERIAL PRIMARY KEY, type TEXT NOT NULL, category TEXT, description TEXT NOT NULL, amount NUMERIC(14,2) NOT NULL, date DATE NOT NULL,
   reference_id BIGINT, reference_type TEXT, paid BOOLEAN DEFAULT FALSE, due_date DATE, paid_at TIMESTAMPTZ, notes TEXT,
@@ -241,7 +262,28 @@ async function initDb() {
   await p.query(`DO $$ BEGIN ALTER TABLE users ADD CONSTRAINT users_customer_fk FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE SET NULL; EXCEPTION WHEN duplicate_object THEN NULL; END $$`);
   await p.query(`ALTER TABLE printers ADD COLUMN IF NOT EXISTS photo_url TEXT`);
   await p.query(`ALTER TABLE printers ADD COLUMN IF NOT EXISTS cloudinary_public_id TEXT`);
+  await p.query(`CREATE TABLE IF NOT EXISTS production_component_usages (
+    id BIGSERIAL PRIMARY KEY, production_id BIGINT NOT NULL REFERENCES production_jobs(id) ON DELETE CASCADE,
+    product_component_id BIGINT REFERENCES product_components(id) ON DELETE SET NULL,
+    component_kind TEXT NOT NULL, component_id BIGINT NOT NULL, quantity NUMERIC(14,3) NOT NULL,
+    unit_cost NUMERIC(14,4) NOT NULL DEFAULT 0, total_cost NUMERIC(14,4) NOT NULL DEFAULT 0, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(production_id,product_component_id)
+  )`);
+  await p.query(`ALTER TABLE production_component_usages ALTER COLUMN product_component_id DROP NOT NULL`);
+  await p.query(`DO $$ DECLARE c text; BEGIN
+    SELECT conname INTO c FROM pg_constraint WHERE conrelid='production_component_usages'::regclass AND contype='f' AND pg_get_constraintdef(oid) LIKE '%product_components%';
+    IF c IS NOT NULL THEN EXECUTE format('ALTER TABLE production_component_usages DROP CONSTRAINT %I', c); END IF;
+    ALTER TABLE production_component_usages ADD CONSTRAINT production_component_usages_component_fk FOREIGN KEY (product_component_id) REFERENCES product_components(id) ON DELETE SET NULL;
+  EXCEPTION WHEN duplicate_object THEN NULL; END $$`);
+  await p.query(`CREATE INDEX IF NOT EXISTS idx_production_component_usages_production ON production_component_usages(production_id)`);
   await p.query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS cost_parts NUMERIC(14,2) DEFAULT 0`);
+  await p.query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS cost_project_parts NUMERIC(14,2) DEFAULT 0`);
+  await p.query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS cost_maintenance NUMERIC(14,2) DEFAULT 0`);
+  await p.query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS printer_id BIGINT REFERENCES printers(id) ON DELETE SET NULL`);
+  await p.query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS material_roll_id BIGINT REFERENCES material_rolls(id) ON DELETE SET NULL`);
+  await p.query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS development_time_min NUMERIC(14,2) DEFAULT 0`);
+  await p.query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS costs_manual BOOLEAN NOT NULL DEFAULT FALSE`);
+  await p.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS roll_id BIGINT REFERENCES material_rolls(id) ON DELETE SET NULL`);
   await p.query(`ALTER TABLE printer_maintenance ADD COLUMN IF NOT EXISTS plan_id BIGINT REFERENCES maintenance_plans(id) ON DELETE SET NULL`);
   await p.query(`ALTER TABLE printer_maintenance ADD COLUMN IF NOT EXISTS hours_at NUMERIC(14,2)`);
   await p.query(`ALTER TABLE quotes ADD COLUMN IF NOT EXISTS project_id BIGINT REFERENCES projects(id) ON DELETE SET NULL`);
@@ -253,6 +295,7 @@ async function initDb() {
   const defs = {
     company_name: 'Minha Impressora 3D', labor_cost_hour: '15.00', energy_cost_kwh: '0.75',
     machine_cost_hour: '2.50', maintenance_cost_hour: '0.50', default_min_stock_g: '50', printer_investment: '0',
+    default_development_time_min: '0', default_markup_percent: '100', default_packaging_cost: '0', default_finishing_cost: '0',
   };
   for (const [k, v] of Object.entries(defs)) {
     await p.query(`INSERT INTO settings (key,value) VALUES ($1,$2) ON CONFLICT (key) DO NOTHING`, [k, v]);

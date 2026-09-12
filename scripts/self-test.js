@@ -56,6 +56,6 @@ assert(fs.existsSync(path.join(__dirname, '..', 'frontend', 'manifest.webmanifes
 assert(fs.existsSync(path.join(__dirname, '..', 'frontend', 'sw.js')), 'service worker must exist');
 assert(fs.readFileSync(path.join(__dirname, '..', 'middleware/auth.js'), 'utf8').includes('customerId'), 'auth payload must include customer scope');
 assert(api.includes("router.use((req,res,next)=>{if(req.user?.role==='CLIENTE')"), 'client role must be restricted server-side');
-assert(fs.readFileSync(path.join(__dirname, '..', 'frontend/js/modules/pedidos.js'), 'utf8').includes("user.role === 'CLIENTE'"), 'client orders UI must be read-only');
-assert(fs.readFileSync(path.join(__dirname, '..', 'frontend/js/modules/producao.js'), 'utf8').includes("user.role === 'CLIENTE'"), 'client production UI must be read-only');
+assert(fs.readFileSync(path.join(__dirname, '..', 'frontend/js/modules/pedidos.js'), 'utf8').includes("role==='CLIENTE'"), 'client orders UI must be read-only');
+assert(/user\.role\s*===\s*'CLIENTE'/.test(fs.readFileSync(path.join(__dirname, '..', 'frontend/js/modules/producao.js'), 'utf8')), 'client production UI must be read-only');
 assert(fs.existsSync(path.join(__dirname, '..', 'docs', 'MASTER_COMPLIANCE.md')), 'master compliance documentation must exist');
