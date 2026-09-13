@@ -15,7 +15,7 @@ function renderTestes() {
         <button class="btn btn-primary" onclick="openTesteModal()">+ Novo Teste</button>
       </div>
       <table>
-        <thead><tr><th>Projeto</th><th>Versão</th><th>Impressora</th><th>Tempo Est./Real</th><th>Peso Est./Real</th><th>Desperdício</th><th>Resultado</th><th>Data</th><th></th></tr></thead>
+        <thead><tr><th>Projeto</th><th>Versão</th><th>Impressora</th><th>Tempo Est./Real</th><th>Peso Est./Real</th><th>Desperdício</th><th>Resultado</th><th>Data</th><th>Ações</th></tr></thead>
         <tbody>
           ${_testes.length ? _testes.map(t => `
             <tr>
@@ -26,8 +26,8 @@ function renderTestes() {
               <td>${num(t.est_weight_g,1)}g / ${num(t.real_weight_g,1)}g</td>
               <td>${num(t.waste_g,1)}g</td>
               <td>${badge(t.result || 'CANCELADO')}</td>
-              <td>${dateStr(t.created_at)}</td>
-              <td><button class="btn btn-secondary btn-sm" onclick="openTesteModal(${t.id})">✏️</button></td>
+              <td>${dateStr(t.test_date||t.created_at)}</td>
+              <td style="white-space:nowrap"><button class="btn btn-secondary btn-sm" onclick="openTesteModal(${t.id})">✏️</button> <button class="btn btn-danger btn-sm" onclick="deleteTeste(${t.id})">🗑️</button></td>
             </tr>`).join('') : '<tr><td colspan="9" style="text-align:center;color:var(--text2);padding:2rem">Nenhum teste registrado</td></tr>'}
         </tbody>
       </table>
@@ -37,7 +37,7 @@ function renderTestes() {
 async function openTesteModal(id) {
   const existing = id ? _testes.find(x => Number(x.id) === Number(id)) : {};
   const tiposFalha = ['Stringing','Warping','Layer shift','Falha de adesão','Entupimento','Erro de máquina','Falta de filamento','Erro humano','Outro'];
-  openModal('Novo Teste de Impressão', `
+  openModal(id ? 'Editar Teste de Impressão' : 'Novo Teste de Impressão', `
     <div class="form-grid">
       <div class="form-group span2"><label>Projeto *</label>
         <select id="tf-project_id" onchange="loadVersionsForTest(this.value)">
@@ -58,6 +58,7 @@ async function openTesteModal(id) {
           ${_rollsT.map(r => `<option value="${r.id}" ${existing.roll_id==r.id?'selected':''}>${r.type} ${r.color||''} ${r.code||''} — ${num(r.current_weight_g,0)}g</option>`).join('')}
         </select>
       </div>
+      <div class="form-group"><label>Data do teste</label><input type="date" id="tf-test_date" value="${existing.test_date||new Date().toISOString().slice(0,10)}"></div>
       <div class="form-group"><label>Tempo Estimado (min)</label><input type="number" id="tf-est_time_min" value="${existing.est_time_min||0}"></div>
       <div class="form-group"><label>Tempo Real (min)</label><input type="number" id="tf-real_time_min" value="${existing.real_time_min||0}"></div>
       <div class="form-group"><label>Peso Estimado (g)</label><input type="number" id="tf-est_weight_g" value="${existing.est_weight_g||0}" step="0.1"></div>
@@ -110,7 +111,7 @@ async function saveTeste(id) {
     temp_bed: R('tf-temp_bed').value, layer_height: R('tf-layer_height').value,
     infill: R('tf-infill').value, walls: R('tf-walls').value, speed: R('tf-speed').value, supports: R('tf-supports').value,
     result: R('tf-result').value, failure_type: R('tf-failure_type')?.value,
-    failure_cause: R('tf-failure_cause')?.value, notes: R('tf-notes').value
+    failure_cause: R('tf-failure_cause')?.value, notes: R('tf-notes').value, test_date: R('tf-test_date').value
   };
   if (!body.project_id) return toast('Projeto é obrigatório', 'err');
   try {
@@ -119,4 +120,11 @@ async function saveTeste(id) {
   } catch (e) { toast(e.message, 'err'); }
 }
 
-window.openTesteModal=openTesteModal;window.toggleFailureFields=toggleFailureFields;window.loadVersionsForTest=loadVersionsForTest;window.saveTeste=saveTeste;
+
+async function deleteTeste(id) {
+  if (!confirmAction('Excluir este teste? O consumo de filamento será estornado automaticamente.')) return;
+  try { await API.del(`/tests/${id}`); toast('Teste excluído e estoque estornado!'); pageRenderers.testes(); }
+  catch (e) { toast(e.message,'err'); }
+}
+
+window.openTesteModal=openTesteModal;window.toggleFailureFields=toggleFailureFields;window.loadVersionsForTest=loadVersionsForTest;window.saveTeste=saveTeste;window.deleteTeste=deleteTeste;

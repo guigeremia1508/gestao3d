@@ -74,10 +74,9 @@ async function deleteImpressora(id) {
 }
 
 async function openManutencaoModal(pid,pname,planId=0){
-  const reqs=await Promise.allSettled([API.get(`/printers/${pid}/maintenance`),API.get('/consumables'),API.get('/parts'),API.get('/maintenance/plans')]);
-  const [list,tools,parts,plans]=reqs.map((r)=>r.status==='fulfilled'?r.value:[]);
-  const failures=reqs.filter(r=>r.status==='rejected').map(r=>r.reason?.message||'falha');
-  if(failures.length)toast(`Alguns dados da manutenção não carregaram: ${failures.join(' | ')}`,'err');
+  const [list,tools,parts,plans] = await Promise.all([
+    API.get(`/printers/${pid}/maintenance`),API.get('/consumables'),API.get('/parts'),API.get('/maintenance/plans')
+  ]);
   const mine=plans.filter(p=>Number(p.printer_id)===Number(pid));
   const selectedPlan=mine.find(p=>Number(p.id)===Number(planId));
   const planOptions=mine.map(p=>`<option value="${p.id}" data-task="${String(p.task).replace(/"/g,'&quot;')}" ${selectedPlan&&Number(selectedPlan.id)===Number(p.id)?'selected':''}>${p.task} — ${p.status==='ATRASADA'?'ATRASADA':p.hours_remaining!=null?'faltam '+num(p.hours_remaining,1)+'h':p.status}</option>`).join('');
@@ -116,13 +115,13 @@ async function saveManutencao(pid){
  try{await API.post(`/printers/${pid}/maintenance`,body);closeModal();toast(planId?'Manutenção registrada e próximo ciclo atualizado!':'Manutenção registrada e estoque atualizado!');pageRenderers.impressoras()}catch(e){toast(e.message,'err')}
 }
 async function openPlanModal(pid,pname){
-  let plans=[]; try{plans=await API.get('/maintenance/plans')}catch(e){return toast(`Não foi possível carregar os planos: ${e.message}`,'err')}
+  const plans=await API.get('/maintenance/plans');
   const mine=plans.filter(p=>Number(p.printer_id)===Number(pid));
   openModal(`📅 Plano Preventivo — ${pname}`,`
     <div class="form-grid" style="margin-bottom:1rem">
       <div class="form-group span2"><label>Manutenção recomendada</label><select id="mp-preset" onchange="applyMaintenancePreset()"><option value="">Personalizada</option><option value="100-inspecao">100h — Inspeção e limpeza básica</option><option value="100-eixos">100h — Verificar eixos, ruídos e movimento</option><option value="250-detalhada">250h — Inspeção detalhada</option><option value="500-lubrificacao">500h — Lubrificação completa preventiva</option><option value="1000-revisao">1000h — Revisão geral profunda</option><option value="2000-completa">2000h — Revisão completa e itens de desgaste</option></select></div><div class="form-group span2"><label>Tarefa *</label><input id="mp-task" placeholder="Ex.: Lubrificar eixos"></div>
       <div class="form-group"><label>A cada horas</label><input type="number" id="mp-hours" placeholder="100" min="0.1" step="0.1"></div>
-      <div class="form-group"><label>A cada dias (opcional)</label><input type="number" id="mp-days" placeholder=""></div>
+      <div class="form-group"><label>A cada dias (opcional)</label><input type="number" id="mp-days" placeholder="Ex.: 30" min="1" step="1"></div>
       <div class="form-group"><label>Próxima data (opcional)</label><input type="date" id="mp-nextdate"></div>
       <div class="form-group"><label>Próximas horas (opcional)</label><input type="number" id="mp-nexthours" placeholder="Automático" min="0" step="0.1"></div>
       <div class="form-group span2"><label>Descrição / observações</label><textarea id="mp-notes" placeholder="O que deve ser verificado ou feito?"></textarea></div>
@@ -148,6 +147,11 @@ function applyMaintenancePreset(){const v=R('mp-preset')?.value;const presets={
 async function savePlan(pid,pname){
  const b={printer_id:pid,task:R('mp-task').value.trim(),interval_hours:R('mp-hours').value,interval_days:R('mp-days').value,next_due_date:R('mp-nextdate').value,next_due_hours:R('mp-nexthours').value,notes:R('mp-notes').value};
  if(!b.task)return toast('Informe a tarefa','err');
+ const hours=Number(b.interval_hours),days=Number(b.interval_days),dueHours=Number(b.next_due_hours);
+ if(!b.interval_hours&&!b.interval_days)return toast('Informe o intervalo em horas ou dias','err');
+ if(b.interval_hours&&(!Number.isFinite(hours)||hours<=0))return toast('A cada horas deve ser maior que zero','err');
+ if(b.interval_days&&(!Number.isFinite(days)||days<=0))return toast('A cada dias deve ser maior que zero','err');
+ if(b.next_due_hours&&(!Number.isFinite(dueHours)||dueHours<0))return toast('Próximas horas inválidas','err');
  try{await API.post('/maintenance/plans',b);toast('Plano criado!');openPlanModal(pid,pname);}catch(e){toast(e.message,'err')}
 }
 async function editPlan(id,pid,pname){

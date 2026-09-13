@@ -42,6 +42,8 @@ for (const marker of ["router.post('/logout'", "router.post('/logout-all'", 'has
 for (const marker of ['CREATE TABLE IF NOT EXISTS sessions', 'CREATE TABLE IF NOT EXISTS audit_logs', 'project_time_min NUMERIC', 'project_id BIGINT REFERENCES projects', 'ALTER TABLE project_parts ADD COLUMN IF NOT EXISTS deleted_at']) assert(schema.includes(marker), `missing schema ${marker}`);
 for (const marker of ['Projeto (opcional)', 'Horas de projeto', "window.openOrcamentoModal"]) assert(quote.includes(marker), `missing quote UI ${marker}`);
 for (const marker of ['Manutenção recomendada', '500h — Lubrificação completa preventiva', 'window.applyMaintenancePreset']) assert(printer.includes(marker), `missing maintenance preset ${marker}`);
+const testsUi = fs.readFileSync(path.join(__dirname, '..', 'frontend/js/modules/testes.js'), 'utf8');
+for (const marker of ['Data do teste', 'deleteTeste']) assert(testsUi.includes(marker), `missing test UI ${marker}`);
 
 console.log('✅ Gestão 3D self-test passed');
 
@@ -59,3 +61,7 @@ assert(api.includes("router.use((req,res,next)=>{if(req.user?.role==='CLIENTE')"
 assert(fs.readFileSync(path.join(__dirname, '..', 'frontend/js/modules/pedidos.js'), 'utf8').includes("role==='CLIENTE'"), 'client orders UI must be read-only');
 assert(/user\.role\s*===\s*'CLIENTE'/.test(fs.readFileSync(path.join(__dirname, '..', 'frontend/js/modules/producao.js'), 'utf8')), 'client production UI must be read-only');
 assert(fs.existsSync(path.join(__dirname, '..', 'docs', 'MASTER_COMPLIANCE.md')), 'master compliance documentation must exist');
+assert(schema.includes('ALTER TABLE tests ADD COLUMN IF NOT EXISTS test_date DATE'), 'test date migration must exist');
+assert(schema.includes('ALTER TABLE tests ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ'), 'test soft-delete migration must exist');
+assert(api.includes("router.delete('/tests/:id'"), 'test delete API must exist');
+assert(api.includes('COALESCE(t.test_date,t.created_at::date)'), 'test date must drive date-aware calculations');
