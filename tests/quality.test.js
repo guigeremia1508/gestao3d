@@ -85,7 +85,7 @@ test('frontend mantém PWA e tratamento responsivo', () => {
   const sw = read('frontend/sw.js');
   assert.match(html, /manifest\.webmanifest/);
   assert.match(css, /@media \(max-width: 768px\)/);
-  assert.match(sw, /gestao3d-v3-3-0-static/);
+  assert.match(sw, /gestao3d-v3-3-4-static/);
 });
 
 
@@ -223,7 +223,7 @@ test('pedidos integram frete e receita idempotente ao pagamento',()=>{
  assert.match(business,/gross - disc \+ shipping/);
  assert.ok(api.includes("reference_type='order'"));
  assert.ok(api.includes("VALUES('RECEITA','Venda'"));
- assert.ok(api.includes("'order',true,NOW()"));
+ assert.ok(api.includes("'order',TRUE,NOW()"));
  assert.ok(api.includes("reference_type='order_refund'"));
  assert.match(api,/SELECT id,amount,paid FROM transactions WHERE reference_type='order'/);
  assert.match(pedidos,/id="ped-freight"/);
@@ -239,8 +239,39 @@ test('envios possuem relação com cliente/pedido e limites de segurança',()=>{
  assert.ok(api.includes("router.delete('/shipments/:id'"));
  assert.match(api,/Pedido não pertence ao cliente selecionado/);
  assert.match(api,/já possui um envio ativo/);
- assert.match(schema,/idx_shipments_one_active_order/);
+ assert.match(schema,/CREATE INDEX IF NOT EXISTS idx_shipments_order/);
  assert.match(envios,/Cliente \*/);
  assert.match(envios,/Código de rastreio/);
  assert.match(envios,/Entrega realizada/);
+});
+
+
+test('pedidos possuem pagamento explícito e status ENVIADO com criação automática de envio', () => {
+  const api = read('routes/api.js');
+  const schema = read('database/init.js');
+  const pedidos = read('frontend/js/modules/pedidos.js');
+  assert.match(schema, /ALTER TABLE orders ADD COLUMN IF NOT EXISTS paid BOOLEAN/);
+  assert.match(api, /payment_method,paid,due_date/);
+  assert.match(api, /nextPaid=.*bool\(b\.paid\)/);
+  assert.match(api, /nextStatus==='ENVIADO'/);
+  assert.match(api, /INSERT INTO shipments\(order_id,customer_id,city,freight,status\)/);
+  assert.match(pedidos, /'ENVIADO'/);
+  assert.match(pedidos, /id="ped-paid"/);
+  assert.match(pedidos, /paid:R\('ped-paid'\)\.checked/);
+});
+
+test('pagamento do pedido lança receita apenas quando marcado e evita receita duplicada', () => {
+  const api = read('routes/api.js');
+  assert.match(api, /else if\(nextPaid\)/);
+  assert.match(api, /if\(!receipt\).*INSERT INTO transactions/s);
+  assert.match(api, /UPDATE transactions SET amount=\$1,paid=TRUE/);
+  assert.match(api, /reference_type='order'/);
+});
+
+test('envio sincroniza status de volta ao pedido', () => {
+  const api = read('routes/api.js');
+  assert.match(api, /status==='ENVIADO' \|\| status==='EM_TRANSITO'/);
+  assert.match(api, /UPDATE orders SET status='ENVIADO'/);
+  assert.match(api, /status==='ENTREGUE'/);
+  assert.match(api, /UPDATE orders SET status='ENTREGUE'/);
 });
