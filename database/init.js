@@ -373,7 +373,7 @@ async function initDb() {
   for (const [name, date, minutes, grams, sourceKey] of historicalTests) {
     await dbRun(`INSERT INTO tests(name,source_key,printer_id,real_time_min,real_weight_g,waste_g,result,test_date,notes)
       VALUES($1,$2,$3,$4,$5,0,'APROVADO',$6,$7)
-      ON CONFLICT (source_key) DO NOTHING`,
+      ON CONFLICT (source_key) WHERE source_key IS NOT NULL DO NOTHING`,
       [name,sourceKey,historicalPrinter.id,minutes,grams,date,'Importado como histórico oficial; sem movimentação de estoque.']);
   }
   await dbRun(`UPDATE printers p SET
