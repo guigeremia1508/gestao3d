@@ -197,7 +197,7 @@ function navigate(page) {
     dashboard: 'Dashboard', projetos: 'Projetos', testes: 'Testes de Impressão',
     produtos: 'Produtos', pedidos: 'Pedidos', orcamentos: 'Orçamentos', producao: 'Produção',
     impressoras: 'Impressoras', estoque: 'Filamentos', ferramentas: 'Ferramentas & Consumíveis', pecas: 'Parafusos & Peças', clientes: 'Clientes',
-    financeiro: 'Financeiro', relatorios: 'Relatórios', calculadora: 'Calculadora de Custos', auditoria: 'Auditoria', configuracoes: 'Configurações'
+    financeiro: 'Financeiro', envios: 'Envios', relatorios: 'Relatórios', calculadora: 'Calculadora de Custos', auditoria: 'Auditoria', configuracoes: 'Configurações'
   };
   R('page-title').textContent = titles[page] || page;
   R('content').innerHTML = `<div style="color:var(--text2);padding:2rem;text-align:center">Carregando...</div>`;

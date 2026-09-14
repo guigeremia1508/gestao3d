@@ -192,8 +192,14 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_product_components_product_consumable ON p
 CREATE INDEX IF NOT EXISTS idx_product_components_product ON product_components(product_id);
 CREATE TABLE IF NOT EXISTS orders (
   id BIGSERIAL PRIMARY KEY, customer_id BIGINT REFERENCES customers(id) ON DELETE SET NULL, product_id BIGINT REFERENCES products(id) ON DELETE SET NULL,
-  quantity INTEGER DEFAULT 1, material TEXT, roll_id BIGINT REFERENCES material_rolls(id) ON DELETE SET NULL, unit_price NUMERIC(14,2) DEFAULT 0, discount NUMERIC(14,2) DEFAULT 0, total NUMERIC(14,2) DEFAULT 0,
+  quantity INTEGER DEFAULT 1, material TEXT, roll_id BIGINT REFERENCES material_rolls(id) ON DELETE SET NULL, unit_price NUMERIC(14,2) DEFAULT 0, discount NUMERIC(14,2) DEFAULT 0, freight NUMERIC(14,2), total NUMERIC(14,2) DEFAULT 0,
   payment_method TEXT, due_date DATE, notes TEXT, status TEXT NOT NULL DEFAULT 'ORCAMENTO', created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), deleted_at TIMESTAMPTZ
+);
+CREATE TABLE IF NOT EXISTS shipments (
+  id BIGSERIAL PRIMARY KEY, order_id BIGINT NOT NULL REFERENCES orders(id) ON DELETE RESTRICT, customer_id BIGINT REFERENCES customers(id) ON DELETE SET NULL,
+  street TEXT, number TEXT, complement TEXT, neighborhood TEXT, city TEXT, state TEXT, postal_code TEXT,
+  shipping_method TEXT NOT NULL DEFAULT 'Outro', freight NUMERIC(14,2), estimated_delivery DATE, delivered_at DATE, status TEXT NOT NULL DEFAULT 'PENDENTE',
+  tracking_code TEXT, tracking_url TEXT, notes TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), deleted_at TIMESTAMPTZ
 );
 CREATE TABLE IF NOT EXISTS production_jobs (
   id BIGSERIAL PRIMARY KEY, order_id BIGINT REFERENCES orders(id) ON DELETE SET NULL, project_id BIGINT REFERENCES projects(id) ON DELETE SET NULL,
@@ -326,6 +332,12 @@ async function initDb() {
   await p.query(`ALTER TABLE tests ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`);
   await p.query(`UPDATE tests SET test_date=created_at::date WHERE test_date IS NULL`);
   await p.query(`CREATE INDEX IF NOT EXISTS idx_tests_active_date ON tests(test_date) WHERE deleted_at IS NULL`);
+  await p.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS freight NUMERIC(14,2)`);
+  await p.query(`CREATE INDEX IF NOT EXISTS idx_orders_customer ON orders(customer_id) WHERE deleted_at IS NULL`);
+  await p.query(`CREATE INDEX IF NOT EXISTS idx_transactions_reference ON transactions(reference_type,reference_id) WHERE deleted_at IS NULL`);
+  await p.query(`CREATE INDEX IF NOT EXISTS idx_shipments_order ON shipments(order_id) WHERE deleted_at IS NULL`);
+  await p.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_shipments_one_active_order ON shipments(order_id) WHERE deleted_at IS NULL AND status <> 'CANCELADO'`);
+  await p.query(`CREATE INDEX IF NOT EXISTS idx_shipments_status ON shipments(status) WHERE deleted_at IS NULL`);
   await p.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS roll_id BIGINT REFERENCES material_rolls(id) ON DELETE SET NULL`);
   await p.query(`ALTER TABLE printer_maintenance ADD COLUMN IF NOT EXISTS plan_id BIGINT REFERENCES maintenance_plans(id) ON DELETE SET NULL`);
   await p.query(`ALTER TABLE printer_maintenance ADD COLUMN IF NOT EXISTS hours_at NUMERIC(14,2)`);

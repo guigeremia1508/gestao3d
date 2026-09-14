@@ -211,3 +211,36 @@ test('product calculation uses maintenanceAuto in total cost',()=>{
   const src=fs.readFileSync(path.join(ROOT,'routes/api.js'),'utf8');
   assert.match(src,/const total=material\+energy\+machine\+maintenanceAuto\+labor\+packaging\+finishing\+parts/);
 });
+
+test('pedidos integram frete e receita idempotente ao pagamento',()=>{
+ const api=read('routes/api.js');
+ const schema=read('database/init.js');
+ const pedidos=read('frontend/js/modules/pedidos.js');
+ const business=read('utils/business.js');
+ assert.match(schema,/ALTER TABLE orders ADD COLUMN IF NOT EXISTS freight NUMERIC/);
+ assert.match(schema,/CREATE TABLE IF NOT EXISTS shipments/);
+ assert.match(business,/function calculateOrderTotal\(quantity, unitPrice, discount, freight = 0\)/);
+ assert.match(business,/gross - disc \+ shipping/);
+ assert.ok(api.includes("reference_type='order'"));
+ assert.ok(api.includes("VALUES('RECEITA','Venda'"));
+ assert.ok(api.includes("'order',true,NOW()"));
+ assert.ok(api.includes("reference_type='order_refund'"));
+ assert.match(api,/SELECT id,amount,paid FROM transactions WHERE reference_type='order'/);
+ assert.match(pedidos,/id="ped-freight"/);
+});
+
+test('envios possuem relação com cliente/pedido e limites de segurança',()=>{
+ const api=read('routes/api.js');
+ const schema=read('database/init.js');
+ const envios=read('frontend/js/modules/envios.js');
+ assert.ok(api.includes("router.get('/shipments'"));
+ assert.ok(api.includes("router.post('/shipments'"));
+ assert.ok(api.includes("router.put('/shipments/:id'"));
+ assert.ok(api.includes("router.delete('/shipments/:id'"));
+ assert.match(api,/Pedido não pertence ao cliente selecionado/);
+ assert.match(api,/já possui um envio ativo/);
+ assert.match(schema,/idx_shipments_one_active_order/);
+ assert.match(envios,/Cliente \*/);
+ assert.match(envios,/Código de rastreio/);
+ assert.match(envios,/Entrega realizada/);
+});

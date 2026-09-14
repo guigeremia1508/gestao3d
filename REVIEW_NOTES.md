@@ -1,24 +1,38 @@
-# Revisão técnica 3.1
+# Revisão e atualização — Gestão 3D
 
-## Fechado nesta rodada
-- Corrigidos os fluxos de edição baseados em BIGINT do PostgreSQL.
-- Sessão segura por cookie HttpOnly/Secure/SameSite + CSRF.
-- Argon2id para novas senhas e migração de bcrypt legado.
-- Rate limiting, headers, erros sem stack trace e autorização backend.
-- Estoque e produção com transactions/locks e reversão de consumo ao editar.
-- Backup lógico v2 sem sessões.
-- Auditoria persistente e tela administrativa.
-- Busca global.
-- Notificações derivadas de estoque/pedidos/financeiro/manutenção/falhas.
-- Calculadora de custos independente.
-- Arquivos 3D por versão com hash, tamanho, MIME, storage key e Cloudinary raw/authenticated.
-- PWA shell e service worker.
-- Sessões do usuário podem ser consultadas/revogadas.
-- CLIENTE pode ser associado a um cliente e recebe apenas seus pedidos/produção.
-- Corrigido frontend do perfil CLIENTE para não solicitar `/customers`, `/products`, `/printers` ou `/rolls`.
-- Corrigido total de pedidos para nunca ficar negativo.
-- Cache PWA versionado e pré-cache dos módulos.
-- Adicionada documentação de conformidade com a master.
+## Implementado
 
-## Limites restantes
-A master pede React + TypeScript + Vite + Prisma como arquitetura futura, Print Agent local ESC/POS, MFA/2FA, recuperação de senha com fluxo de e-mail, paginação server-side completa em todas as telas, suíte automatizada de segurança e observabilidade mais profunda. Esses itens são evoluções estruturais, não pequenos patches.
+- Pedido → Financeiro: a transição do pedido para `CONFIRMADO` representa a confirmação financeira existente no fluxo atual (`AGUARDANDO_PAGAMENTO` → `CONFIRMADO`). Nesse momento é criada uma única `RECEITA` vinculada ao pedido, marcada como paga.
+- Idempotência: a operação usa transação PostgreSQL e bloqueio `FOR UPDATE` do pedido. Repetir a atualização do pedido não cria outra receita.
+- Edição após pagamento: a receita automática vinculada é atualizada para refletir o novo total, sem criar uma segunda receita.
+- Cancelamento após pagamento: o lançamento original é preservado e é criado um lançamento de `Estorno` negativo, também vinculado ao pedido.
+- Dashboard: continua usando `transactions` como fonte de receita; não foi criado um segundo cálculo de receita.
+- Frete: `orders.freight` é opcional. O total passa a considerar subtotal - desconto + frete, preservando pedidos antigos com `NULL`.
+- Envios: nova tabela `shipments` com FK para `orders` e `customers`, endereço, meio de envio, frete, datas, status, rastreio e observações.
+- Regra de envio: existe índice único parcial para impedir mais de um envio ativo para o mesmo pedido.
+- Integração Cliente → Pedido → Envio: a lista de pedidos disponíveis é filtrada pelo cliente selecionado e o backend valida a correspondência.
+- Pedidos: a listagem mostra o status do envio quando existir e o formulário permite informar frete.
+- Backup: `shipments` foi incluída na exportação; restaurações de backups antigos continuam aceitas, tratando `shipments` como tabela opcional do formato anterior.
+
+## Arquivos modificados
+
+- `database/init.js`
+- `routes/api.js`
+- `utils/business.js`
+- `frontend/js/modules/pedidos.js`
+- `frontend/js/modules/envios.js` (novo)
+- `frontend/index.html`
+- `frontend/js/app.js`
+- `tests/quality.test.js`
+
+## Validação executada
+
+- Sintaxe Node.js dos arquivos alterados: OK.
+- `node --test tests/quality.test.js`: 25/25 testes passaram.
+- `node scripts/self-test.js`: OK.
+- `node scripts/predeploy-check.js`: OK.
+- Teste direto de cálculo: sem frete, com frete e com desconto + frete: OK.
+
+## Observação de deploy
+
+A alteração foi preparada para o fluxo atual de inicialização do PostgreSQL, usando `CREATE TABLE IF NOT EXISTS` e `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`. Nenhum reset de banco ou comando destrutivo foi incluído.

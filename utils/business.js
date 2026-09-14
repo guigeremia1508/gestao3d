@@ -53,16 +53,17 @@ function calculateQuoteCosts(input = {}) {
   };
 }
 
-function calculateOrderTotal(quantity, unitPrice, discount) {
+function calculateOrderTotal(quantity, unitPrice, discount, freight = 0) {
   const qty = Math.max(1, Number.parseInt(quantity, 10) || 1);
   const gross = nonNegative(unitPrice) * qty;
   const disc = nonNegative(discount);
+  const shipping = nonNegative(freight);
   if (disc > gross) {
     const error = new Error('Desconto não pode ser maior que o valor bruto do pedido.');
     error.status = 400;
     throw error;
   }
-  return gross - disc;
+  return Math.max(0, gross - disc + shipping);
 }
 
 module.exports = { nonNegative, calculateQuoteCosts, calculateOrderTotal };
