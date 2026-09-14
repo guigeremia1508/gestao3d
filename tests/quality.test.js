@@ -205,3 +205,9 @@ test('edição de filamento, componentes duplicados e baixa da manutenção são
   assert.match(stock, /Estoque Atual/);
   assert.match(impressoras, /Manutenção registrada e próximo ciclo atualizado/);
 });
+
+
+test('product calculation uses maintenanceAuto in total cost',()=>{
+  const src=fs.readFileSync(path.join(ROOT,'routes/api.js'),'utf8');
+  assert.match(src,/const total=material\+energy\+machine\+maintenanceAuto\+labor\+packaging\+finishing\+parts/);
+});

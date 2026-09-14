@@ -310,7 +310,7 @@ async function calculateProductData(b,components){
  const packaging=n(b.cost_packaging!==undefined?b.cost_packaging:settings.default_packaging_cost);
  const finishing=n(b.cost_finishing!==undefined?b.cost_finishing:settings.default_finishing_cost);
  const parts=components.reduce((a,x)=>a+x.total_cost,0);
- const total=material+energy+machine+maintenance+labor+packaging+finishing+parts;
+ const total=material+energy+machine+maintenanceAuto+labor+packaging+finishing+parts;
  const manual=bool(b.costs_manual);
  const costMaterial=manual?n(b.cost_material):material; const costEnergy=manual?n(b.cost_energy):energy; const costMachine=manual?n(b.cost_machine):machine;
  const costLabor=manual?n(b.cost_labor):labor; const costMaintenance=manual?n(b.cost_maintenance):maintenanceAuto; const costPackaging=packaging; const costFinishing=finishing;
