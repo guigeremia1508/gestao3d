@@ -37,7 +37,7 @@ router.put('/printers/:id',adminOnly,async(req,res,next)=>{try{const b=req.body;
 router.delete('/printers/:id',adminOnly,async(req,res,next)=>{try{await dbRun('UPDATE printers SET deleted_at=NOW() WHERE id=$1',[req.params.id]);res.json({ok:true})}catch(e){next(e)}});
 router.get('/printers/:id/maintenance',async(req,res,next)=>{try{res.json(await dbAll(`SELECT pm.*,mp.task as plan_task FROM printer_maintenance pm LEFT JOIN maintenance_plans mp ON mp.id=pm.plan_id WHERE pm.printer_id=$1 ORDER BY pm.created_at DESC`,[req.params.id]))}catch(e){next(e)}});
 router.post('/printers/:id/maintenance',async(req,res,next)=>{try{const b=req.body||{};const result=await withTransaction(async tx=>{
- const printer=await tx.get(`SELECT COALESCE(p.total_hours,0) + COALESCE(t.test_hours,0) AS current_hours FROM printers p LEFT JOIN (SELECT printer_id,COALESCE(SUM(CASE WHEN real_time_min>0 AND result<>'CANCELADO' THEN real_time_min ELSE 0 END),0)/60 AS test_hours FROM tests WHERE deleted_at IS NULL GROUP BY printer_id) t ON t.printer_id=p.id WHERE p.id=$1 AND p.deleted_at IS NULL`,[req.params.id]);
+ const printer=await tx.get(`SELECT COALESCE(p.total_hours,0) + COALESCE(t.test_hours,0) AS current_hours,p.status FROM printers p LEFT JOIN (SELECT printer_id,COALESCE(SUM(CASE WHEN real_time_min>0 AND result<>'CANCELADO' THEN real_time_min ELSE 0 END),0)/60 AS test_hours FROM tests WHERE deleted_at IS NULL GROUP BY printer_id) t ON t.printer_id=p.id WHERE p.id=$1 AND p.deleted_at IS NULL`,[req.params.id]);
  if(!printer)throw Object.assign(new Error('Impressora não encontrada'),{status:404});
  const plan=b.plan_id?await tx.get('SELECT * FROM maintenance_plans WHERE id=$1 AND printer_id=$2 AND active=true',[b.plan_id,req.params.id]):null;
  if(b.plan_id&&!plan)throw Object.assign(new Error('Plano de manutenção não encontrado ou inativo'),{status:404});
@@ -49,7 +49,8 @@ router.post('/printers/:id/maintenance',async(req,res,next)=>{try{const b=req.bo
  if(doneAt&&plan){await tx.run(`UPDATE maintenance_plans SET last_completed_at=$1,last_completed_hours=$2,next_due_date=CASE WHEN interval_days IS NOT NULL THEN ($1::date + interval_days * INTERVAL '1 day') ELSE NULL END,next_due_hours=CASE WHEN interval_hours IS NOT NULL THEN $2 + interval_hours ELSE NULL END WHERE id=$3`,[doneAt,completedHours,b.plan_id]);}
  for(const item of (Array.isArray(b.consumables)?b.consumables:[])){const q=n(item.quantity);if(q>0)await consumeItem(tx,{table:'tool_consumables',id:item.id,qty:q,movementTable:'consumable_movements',reason:'MANUTENCAO',referenceId:maintenanceId,notes:b.notes,userId:req.user.id});}
  for(const item of (Array.isArray(b.parts)?b.parts:[])){const q=n(item.quantity);if(q>0)await consumeItem(tx,{table:'small_parts',id:item.id,qty:q,movementTable:'part_movements',reason:'MANUTENCAO',referenceId:maintenanceId,notes:b.notes,userId:req.user.id});}
- return r;});res.json({id:Number(result.id)});}catch(e){next(e)}});
+ if(doneAt){await tx.run("UPDATE printers SET status='DISPONIVEL' WHERE id=$1 AND deleted_at IS NULL",[req.params.id]);}
+ return r;});res.json({id:Number(result.id),maintenance_completed:Boolean(b.done_at)});}catch(e){next(e)}});
 
 const MAINT_WARNING_HOURS=20;
 router.get('/maintenance/plans',async(req,res,next)=>{try{res.json(await dbAll(`SELECT mp.*,p.name printer_name,
@@ -110,7 +111,25 @@ router.delete('/rolls/:id',adminOnly,async(req,res,next)=>{try{
   res.json({ok:true,historyPreserved:true,dependencies:refs});
 }catch(e){next(e)}});
 router.get('/rolls',async(req,res,next)=>{try{res.json(await dbAll('SELECT r.*,m.type,m.brand,m.color FROM material_rolls r JOIN materials m ON m.id=r.material_id WHERE r.deleted_at IS NULL ORDER BY r.status,m.type'))}catch(e){next(e)}});
-router.post('/rolls',adminOnly,async(req,res,next)=>{try{const b=req.body;if(!b.material_id||!b.initial_weight_g)return res.status(400).json({error:'Material e peso obrigatórios'});const w=n(b.initial_weight_g),price=n(b.purchase_price),r=await dbGet('INSERT INTO material_rolls(material_id,code,initial_weight_g,current_weight_g,purchase_price,cost_per_gram,supplier,purchase_date,min_stock_g) VALUES($1,$2,$3,$3,$4,$5,$6,$7,$8) RETURNING id',[b.material_id,b.code||null,w,price,w?price/w:0,b.supplier||null,b.purchase_date||null,b.min_stock_g!=null?n(b.min_stock_g):50]);await dbRun(`INSERT INTO stock_movements(roll_id,type,reason,quantity_g,notes,created_by) VALUES($1,'ENTRADA','COMPRA',$2,$3,$4)`,[r.id,w,'Entrada inicial',req.user.id]);res.json({id:Number(r.id)})}catch(e){next(e)}});
+router.post('/rolls',adminOnly,async(req,res,next)=>{try{const b=req.body;if(!b.material_id||!b.initial_weight_g)return res.status(400).json({error:'Material e peso obrigatórios'});const w=n(b.initial_weight_g),price=n(b.purchase_price),minStock=b.min_stock_g!=null?n(b.min_stock_g):50,r=await dbGet('INSERT INTO material_rolls(material_id,code,initial_weight_g,current_weight_g,purchase_price,cost_per_gram,supplier,purchase_date,min_stock_g) VALUES($1,$2,$3,$3,$4,$5,$6,$7,$8) RETURNING id',[b.material_id,b.code||null,w,price,w?price/w:0,b.supplier||null,b.purchase_date||null,minStock]);await dbRun(`INSERT INTO stock_movements(roll_id,type,reason,quantity_g,notes,created_by) VALUES($1,'ENTRADA','COMPRA',$2,$3,$4)`,[r.id,w,'Entrada inicial',req.user.id]);res.json({id:Number(r.id)})}catch(e){next(e)}});
+router.put('/rolls/:id',adminOnly,async(req,res,next)=>{try{const b=req.body||{};const result=await withTransaction(async tx=>{
+ const roll=await tx.get('SELECT * FROM material_rolls WHERE id=$1 AND deleted_at IS NULL FOR UPDATE',[req.params.id]);
+ if(!roll)throw Object.assign(new Error('Filamento/rolo não encontrado'),{status:404});
+ const materialId=Number(b.material_id||roll.material_id);
+ const material=await tx.get('SELECT id FROM materials WHERE id=$1',[materialId]);
+ if(!material)throw Object.assign(new Error('Material não encontrado'),{status:404});
+ const initial=b.initial_weight_g!==''&&b.initial_weight_g!=null?n(b.initial_weight_g):n(roll.initial_weight_g);
+ const current=b.current_weight_g!==''&&b.current_weight_g!=null?n(b.current_weight_g):n(roll.current_weight_g);
+ const price=b.purchase_price!==''&&b.purchase_price!=null?n(b.purchase_price):n(roll.purchase_price);
+ const minStock=b.min_stock_g!==''&&b.min_stock_g!=null?n(b.min_stock_g):n(roll.min_stock_g);
+ if(initial<=0||current<0||minStock<0)throw Object.assign(new Error('Valores de estoque inválidos'),{status:400});
+ if(current>initial)throw Object.assign(new Error('Estoque atual não pode ser maior que o peso inicial'),{status:400});
+ const costPerGram=initial>0?price/initial:0;
+ const status=current<=0?'ESGOTADO':current<=minStock?'EM_USO':'DISPONIVEL';
+ await tx.run('UPDATE material_rolls SET material_id=$1,code=$2,initial_weight_g=$3,current_weight_g=$4,purchase_price=$5,cost_per_gram=$6,supplier=$7,purchase_date=$8,min_stock_g=$9,status=$10 WHERE id=$11',[materialId,b.code!==undefined?String(b.code).trim()||null:roll.code,initial,current,price,costPerGram,b.supplier!==undefined?String(b.supplier).trim()||null:roll.supplier,b.purchase_date||null,minStock,status,req.params.id]);
+ if(Math.abs(current-n(roll.current_weight_g))>0.0001){const delta=current-n(roll.current_weight_g);await tx.run(`INSERT INTO stock_movements(roll_id,type,reason,quantity_g,notes,created_by) VALUES($1,'AJUSTE','AJUSTE_MANUAL',$2,$3,$4)`,[req.params.id,Math.abs(delta),'Edição manual de estoque',req.user.id]);}
+ return {id:Number(req.params.id),current_weight_g:current,cost_per_gram:costPerGram,status};
+ });res.json(result);}catch(e){next(e)}});
 router.post('/rolls/:id/movement',adminOnly,async(req,res,next)=>{try{const b=req.body,q=n(b.quantity_g);if(q<=0)return res.status(400).json({error:'Quantidade inválida'});const result=await withTransaction(async tx=>{const roll=await tx.get('SELECT * FROM material_rolls WHERE id=$1 AND deleted_at IS NULL FOR UPDATE',[req.params.id]);if(!roll)throw Object.assign(new Error('Rolo não encontrado'),{status:404});const delta=['ENTRADA','DEVOLUCAO','AJUSTE'].includes(b.type)?q:-q,nw=n(roll.current_weight_g)+delta;if(nw<0)throw Object.assign(new Error('Estoque insuficiente'),{status:400});await tx.run('UPDATE material_rolls SET current_weight_g=$1,status=$2 WHERE id=$3',[nw,nw<=0?'ESGOTADO':nw<=n(roll.min_stock_g)?'EM_USO':'DISPONIVEL',req.params.id]);await tx.run('INSERT INTO stock_movements(roll_id,type,reason,quantity_g,notes,created_by) VALUES($1,$2,$3,$4,$5,$6)',[req.params.id,b.type,b.reason||'AJUSTE',q,b.notes||null,req.user.id]);return nw});res.json({ok:true,new_weight:result});}catch(e){next(e)}});
 router.get('/stock/movements',async(req,res,next)=>{try{res.json(await dbAll(`SELECT sm.*,r.code roll_code,m.type material_type,m.color FROM stock_movements sm LEFT JOIN material_rolls r ON r.id=sm.roll_id LEFT JOIN materials m ON m.id=r.material_id ORDER BY sm.created_at DESC LIMIT 200`))}catch(e){next(e)}});
 
@@ -254,12 +273,26 @@ router.delete('/quotes/:id',adminOnly,async(req,res,next)=>{try{await dbRun('UPD
 // Products/orders/production
 async function getProductSettings(){const rows=await dbAll('SELECT key,value FROM settings');return Object.fromEntries(rows.map(x=>[x.key,x.value]));}
 async function normalizeProductComponents(components){
- const out=[]; for(const raw of(Array.isArray(components)?components:[])){
+ const merged=new Map();
+ for(const raw of(Array.isArray(components)?components:[])){
   const quantity=n(raw.quantity); if(quantity<=0) continue;
   const kind=raw.kind==='consumable'?'consumable':'part';
-  if(kind==='part'){const item=await dbGet('SELECT id,name,unit_cost FROM small_parts WHERE id=$1 AND deleted_at IS NULL',[raw.item_id]);if(!item)throw Object.assign(new Error('Peça não encontrada'),{status:404});out.push({kind,item_id:Number(item.id),quantity,unit_cost:n(item.unit_cost),total_cost:quantity*n(item.unit_cost)});}
-  else {const item=await dbGet('SELECT id,name,unit,unit_cost FROM tool_consumables WHERE id=$1 AND deleted_at IS NULL',[raw.item_id]);if(!item)throw Object.assign(new Error('Consumível não encontrado'),{status:404});out.push({kind,item_id:Number(item.id),quantity,unit_cost:n(item.unit_cost),total_cost:quantity*n(item.unit_cost)});}
- } return out;
+  const itemId=Number(raw.item_id);
+  if(!Number.isInteger(itemId)||itemId<=0) continue;
+  const key=`${kind}:${itemId}`;
+  const current=merged.get(key);
+  if(current){ current.quantity+=quantity; continue; }
+  if(kind==='part'){
+    const item=await dbGet('SELECT id,name,unit_cost FROM small_parts WHERE id=$1 AND deleted_at IS NULL',[itemId]);
+    if(!item)throw Object.assign(new Error('Peça não encontrada'),{status:404});
+    merged.set(key,{kind,item_id:Number(item.id),quantity,unit_cost:n(item.unit_cost)});
+  } else {
+    const item=await dbGet('SELECT id,name,unit,unit_cost FROM tool_consumables WHERE id=$1 AND deleted_at IS NULL',[itemId]);
+    if(!item)throw Object.assign(new Error('Consumível não encontrado'),{status:404});
+    merged.set(key,{kind,item_id:Number(item.id),quantity,unit_cost:n(item.unit_cost)});
+  }
+ }
+ return [...merged.values()].map(x=>({...x,total_cost:x.quantity*x.unit_cost}));
 }
 async function calculateProductData(b,components){
  const settings=await getProductSettings();

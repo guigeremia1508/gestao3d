@@ -193,3 +193,15 @@ test('exclusão de filamento usa soft delete e preserva histórico', () => {
   assert.match(stock, /Excluir/);
   assert.match(stock, /deleteRoll/);
 });
+
+test('edição de filamento, componentes duplicados e baixa da manutenção são tratados com segurança', () => {
+  const api = read('routes/api.js');
+  const stock = read('frontend/js/modules/estoque.js');
+  const impressoras = read('frontend/js/modules/impressoras.js');
+  assert.ok(api.includes("router.put('/rolls/:id'"));
+  assert.match(api, /const merged=new Map\(\)/);
+  assert.match(api, /UPDATE printers SET status='DISPONIVEL'/);
+  assert.match(stock, /openRollEditModal/);
+  assert.match(stock, /Estoque Atual/);
+  assert.match(impressoras, /Manutenção registrada e próximo ciclo atualizado/);
+});
