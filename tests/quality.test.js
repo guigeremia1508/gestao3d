@@ -85,7 +85,7 @@ test('frontend mantém PWA e tratamento responsivo', () => {
   const sw = read('frontend/sw.js');
   assert.match(html, /manifest\.webmanifest/);
   assert.match(css, /@media \(max-width: 768px\)/);
-  assert.match(sw, /gestao3d-v3-3-4-static/);
+  assert.match(sw, /gestao3d-v3-3-5-static/);
 });
 
 
@@ -256,8 +256,9 @@ test('pedidos possuem pagamento explícito e status ENVIADO com criação autom�
   assert.match(api, /nextStatus==='ENVIADO'/);
   assert.match(api, /INSERT INTO shipments\(order_id,customer_id,city,freight,status\)/);
   assert.match(pedidos, /'ENVIADO'/);
-  assert.match(pedidos, /id="ped-paid"/);
-  assert.match(pedidos, /paid:R\('ped-paid'\)\.checked/);
+  assert.doesNotMatch(pedidos, /id="ped-paid"/);
+  assert.match(pedidos, /togglePedidoPago/);
+  assert.match(pedidos, /enviarPedido/);
 });
 
 test('pagamento do pedido lança receita apenas quando marcado e evita receita duplicada', () => {
@@ -274,4 +275,12 @@ test('envio sincroniza status de volta ao pedido', () => {
   assert.match(api, /UPDATE orders SET status='ENVIADO'/);
   assert.match(api, /status==='ENTREGUE'/);
   assert.match(api, /UPDATE orders SET status='ENTREGUE'/);
+});
+
+
+test('shipments orders-available route precedes dynamic id route',()=>{
+  const api=fs.readFileSync(path.join(ROOT,'routes/api.js'),'utf8');
+  const available=api.indexOf("router.get('/shipments/orders-available'");
+  const dynamic=api.indexOf("router.get('/shipments/:id'");
+  assert.ok(available>=0 && dynamic>=0 && available<dynamic);
 });

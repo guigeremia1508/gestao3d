@@ -57,9 +57,7 @@ function openProdJobModal(id) {
           ${_rollsProd.map(r => `<option value="${r.id}" ${j.roll_id==r.id?'selected':''}>${r.type} ${r.color||''} — ${num(r.current_weight_g,0)}g</option>`).join('')}
         </select>
       </div>
-      <div class="form-group"><label>Peso Estimado (g)</label><input type="number" id="pj-est_weight_g" value="${j.est_weight_g||0}" step="0.1"></div>
       <div class="form-group"><label>Peso Real (g)</label><input type="number" id="pj-real_weight_g" value="${j.real_weight_g||0}" step="0.1"></div>
-      <div class="form-group"><label>Tempo Estimado (min)</label><input type="number" id="pj-est_time_min" value="${j.est_time_min||0}"></div>
       <div class="form-group"><label>Tempo Real (min)</label><input type="number" id="pj-real_time_min" value="${j.real_time_min||0}"></div>
       <div class="form-group"><label>Desperdício (g)</label><input type="number" id="pj-waste_g" value="${j.waste_g||0}" step="0.1"></div>
       <div class="form-group"><label>Status</label>
@@ -75,8 +73,6 @@ function openProdJobModal(id) {
       </div>
       <div class="form-group"><label>Início</label><input type="datetime-local" id="pj-started_at" value="${j.started_at ? j.started_at.slice(0,16) : ''}"></div>
       <div class="form-group"><label>Fim</label><input type="datetime-local" id="pj-finished_at" value="${j.finished_at ? j.finished_at.slice(0,16) : ''}"></div>
-      <div class="form-group"><label>Tipo de Falha</label><input id="pj-failure_type" value="${j.failure_type||''}"></div>
-      <div class="form-group span2"><label>Causa da Falha</label><textarea id="pj-failure_cause">${j.failure_cause||''}</textarea></div>
       <div class="form-group span2"><label>Observações</label><textarea id="pj-notes">${j.notes||''}</textarea></div>
     </div>`,
     `<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
@@ -86,11 +82,11 @@ function openProdJobModal(id) {
 async function saveProdJob(id) {
   const body = {
     printer_id: R('pj-printer_id').value||null, roll_id: R('pj-roll_id').value||null,
-    est_weight_g: R('pj-est_weight_g').value, real_weight_g: R('pj-real_weight_g').value,
-    est_time_min: R('pj-est_time_min').value, real_time_min: R('pj-real_time_min').value,
+    est_weight_g: (_producao.find(x=>Number(x.id)===Number(id))||{}).est_weight_g||0, real_weight_g: R('pj-real_weight_g').value,
+    est_time_min: (_producao.find(x=>Number(x.id)===Number(id))||{}).est_time_min||0, real_time_min: R('pj-real_time_min').value,
     waste_g: R('pj-waste_g').value, status: R('pj-status').value, result: R('pj-result').value||null,
     started_at: R('pj-started_at').value||null, finished_at: R('pj-finished_at').value||null,
-    failure_type: R('pj-failure_type').value, failure_cause: R('pj-failure_cause').value,
+    failure_type: (_producao.find(x=>Number(x.id)===Number(id))||{}).failure_type||null, failure_cause: (_producao.find(x=>Number(x.id)===Number(id))||{}).failure_cause||null,
     notes: R('pj-notes').value
   };
   try {
