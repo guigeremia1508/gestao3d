@@ -165,3 +165,31 @@ test('planos preventivos validam intervalos e testes têm exclusão por estorno'
  assert.ok(tests.includes('Data do teste'));
  assert.ok(tests.includes('deleteTeste'));
 });
+
+
+test('histórico dos testes usa apenas dados reais e suporta negócio/projeto opcionais', () => {
+  const api = read('routes/api.js');
+  const schema = read('database/init.js');
+  const tests = read('frontend/js/modules/testes.js');
+  assert.match(schema, /ALTER TABLE tests ALTER COLUMN project_id DROP NOT NULL/);
+  assert.match(schema, /ADD COLUMN IF NOT EXISTS customer_id BIGINT/);
+  assert.match(schema, /ADD COLUMN IF NOT EXISTS source_key TEXT/);
+  assert.match(schema, /idx_tests_source_key/);
+  assert.doesNotMatch(tests, /Tempo Estimado \(min\)/);
+  assert.doesNotMatch(tests, /Peso Estimado \(g\)/);
+  assert.match(tests, /Nome do negócio/);
+  assert.match(tests, /Tempo Real \(min\)/);
+  assert.match(tests, /Consumo\/Peso Real \(g\)/);
+  assert.ok(api.includes("router.get('/tests'"));
+  assert.match(api, /COALESCE\(c\.name,pc\.name\) customer_name/);
+});
+
+test('exclusão de filamento usa soft delete e preserva histórico', () => {
+  const api = read('routes/api.js');
+  const stock = read('frontend/js/modules/estoque.js');
+  assert.ok(api.includes("router.delete('/rolls/:id'"));
+  assert.match(api, /UPDATE material_rolls SET deleted_at=NOW\(\)/);
+  assert.match(api, /historyPreserved:true/);
+  assert.match(stock, /Excluir/);
+  assert.match(stock, /deleteRoll/);
+});

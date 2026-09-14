@@ -96,6 +96,19 @@ router.delete('/maintenance/plans/:id',async(req,res,next)=>{try{await dbRun('UP
 // Materials/filament
 router.get('/materials',async(req,res,next)=>{try{res.json(await dbAll('SELECT * FROM materials ORDER BY type,brand'))}catch(e){next(e)}});
 router.post('/materials',adminOnly,async(req,res,next)=>{try{const b=req.body;const r=await dbGet('INSERT INTO materials(type,brand,color,color_code,diameter,notes) VALUES($1,$2,$3,$4,$5,$6) RETURNING id',[b.type,b.brand||null,b.color||null,b.color_code||null,n(b.diameter)||1.75,b.notes||null]);res.json({id:Number(r.id)})}catch(e){next(e)}});
+router.delete('/rolls/:id',adminOnly,async(req,res,next)=>{try{
+  const roll=await dbGet('SELECT id,deleted_at FROM material_rolls WHERE id=$1',[req.params.id]);
+  if(!roll)return res.status(404).json({error:'Filamento/rolo não encontrado'});
+  if(roll.deleted_at)return res.status(404).json({error:'Filamento/rolo já está excluído'});
+  const refs=await dbGet(`SELECT
+    (SELECT COUNT(*) FROM tests WHERE roll_id=$1 AND deleted_at IS NULL)::int tests,
+    (SELECT COUNT(*) FROM orders WHERE roll_id=$1 AND deleted_at IS NULL)::int orders,
+    (SELECT COUNT(*) FROM quotes WHERE roll_id=$1 AND deleted_at IS NULL)::int quotes,
+    (SELECT COUNT(*) FROM stock_movements WHERE roll_id=$1)::int movements,
+    (SELECT COUNT(*) FROM products WHERE material_roll_id=$1 AND deleted_at IS NULL)::int products`,[req.params.id]);
+  await dbRun('UPDATE material_rolls SET deleted_at=NOW() WHERE id=$1',[req.params.id]);
+  res.json({ok:true,historyPreserved:true,dependencies:refs});
+}catch(e){next(e)}});
 router.get('/rolls',async(req,res,next)=>{try{res.json(await dbAll('SELECT r.*,m.type,m.brand,m.color FROM material_rolls r JOIN materials m ON m.id=r.material_id WHERE r.deleted_at IS NULL ORDER BY r.status,m.type'))}catch(e){next(e)}});
 router.post('/rolls',adminOnly,async(req,res,next)=>{try{const b=req.body;if(!b.material_id||!b.initial_weight_g)return res.status(400).json({error:'Material e peso obrigatórios'});const w=n(b.initial_weight_g),price=n(b.purchase_price),r=await dbGet('INSERT INTO material_rolls(material_id,code,initial_weight_g,current_weight_g,purchase_price,cost_per_gram,supplier,purchase_date,min_stock_g) VALUES($1,$2,$3,$3,$4,$5,$6,$7,$8) RETURNING id',[b.material_id,b.code||null,w,price,w?price/w:0,b.supplier||null,b.purchase_date||null,b.min_stock_g!=null?n(b.min_stock_g):50]);await dbRun(`INSERT INTO stock_movements(roll_id,type,reason,quantity_g,notes,created_by) VALUES($1,'ENTRADA','COMPRA',$2,$3,$4)`,[r.id,w,'Entrada inicial',req.user.id]);res.json({id:Number(r.id)})}catch(e){next(e)}});
 router.post('/rolls/:id/movement',adminOnly,async(req,res,next)=>{try{const b=req.body,q=n(b.quantity_g);if(q<=0)return res.status(400).json({error:'Quantidade inválida'});const result=await withTransaction(async tx=>{const roll=await tx.get('SELECT * FROM material_rolls WHERE id=$1 AND deleted_at IS NULL FOR UPDATE',[req.params.id]);if(!roll)throw Object.assign(new Error('Rolo não encontrado'),{status:404});const delta=['ENTRADA','DEVOLUCAO','AJUSTE'].includes(b.type)?q:-q,nw=n(roll.current_weight_g)+delta;if(nw<0)throw Object.assign(new Error('Estoque insuficiente'),{status:400});await tx.run('UPDATE material_rolls SET current_weight_g=$1,status=$2 WHERE id=$3',[nw,nw<=0?'ESGOTADO':nw<=n(roll.min_stock_g)?'EM_USO':'DISPONIVEL',req.params.id]);await tx.run('INSERT INTO stock_movements(roll_id,type,reason,quantity_g,notes,created_by) VALUES($1,$2,$3,$4,$5,$6)',[req.params.id,b.type,b.reason||'AJUSTE',q,b.notes||null,req.user.id]);return nw});res.json({ok:true,new_weight:result});}catch(e){next(e)}});
@@ -131,8 +144,28 @@ router.post('/projects/:id/parts',async(req,res,next)=>{try{const b=req.body,q=n
 router.delete('/projects/:projectId/parts/:id',async(req,res,next)=>{try{await withTransaction(async tx=>{const pp=await tx.get('SELECT * FROM project_parts WHERE id=$1 AND project_id=$2 AND deleted_at IS NULL FOR UPDATE',[req.params.id,req.params.projectId]);if(!pp)throw Object.assign(new Error('Vinculo não encontrado'),{status:404});await tx.run('UPDATE small_parts SET current_qty=current_qty+$1 WHERE id=$2',[n(pp.quantity),pp.part_id]);await tx.run("INSERT INTO part_movements(part_id,type,quantity,reason,reference_id,reference_type,created_by) VALUES($1,'DEVOLUCAO',$2,'REMOCAO_PROJETO',$3,'project',$4)",[pp.part_id,n(pp.quantity),pp.id,req.user.id]);await tx.run('UPDATE project_parts SET deleted_at=NOW() WHERE id=$1',[pp.id]);await refreshProjectProductCosts(tx,req.params.projectId)});res.json({ok:true})}catch(e){next(e)}});
 
 // Tests
-router.get('/tests',async(req,res,next)=>{try{res.json(await dbAll(`SELECT t.*,COALESCE(t.test_date,t.created_at::date) test_date,p.name project_name,pr.name printer_name,pv.version FROM tests t JOIN projects p ON p.id=t.project_id LEFT JOIN printers pr ON pr.id=t.printer_id LEFT JOIN project_versions pv ON pv.id=t.version_id WHERE t.deleted_at IS NULL ORDER BY COALESCE(t.test_date,t.created_at::date) DESC,t.created_at DESC`))}catch(e){next(e)}});
-router.post('/tests',async(req,res,next)=>{try{const b=req.body;if(!b.project_id)return res.status(400).json({error:'Projeto obrigatório'});const result=await withTransaction(async tx=>{const r=await tx.get(`INSERT INTO tests(project_id,version_id,printer_id,roll_id,est_time_min,real_time_min,est_weight_g,real_weight_g,waste_g,temp_nozzle,temp_bed,layer_height,infill,walls,speed,supports,result,failure_type,failure_cause,notes,test_date) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21) RETURNING id`,[b.project_id,b.version_id||null,b.printer_id||null,b.roll_id||null,n(b.est_time_min),n(b.real_time_min),n(b.est_weight_g),n(b.real_weight_g),n(b.waste_g),b.temp_nozzle||null,b.temp_bed||null,b.layer_height||null,b.infill||null,b.walls||null,b.speed||null,bool(b.supports),b.result||null,b.failure_type||null,b.failure_cause||null,b.notes||null,(b.test_date||today())]);if(b.roll_id&&n(b.real_weight_g)+n(b.waste_g)>0&&b.result!=='CANCELADO'){const roll=await tx.get('SELECT * FROM material_rolls WHERE id=$1 AND deleted_at IS NULL FOR UPDATE',[b.roll_id]);const consume=n(b.real_weight_g)+n(b.waste_g);if(!roll)throw Object.assign(new Error('Rolo não encontrado'),{status:404});if(n(roll.current_weight_g)<consume)throw Object.assign(new Error('Estoque de filamento insuficiente'),{status:400});const nw=n(roll.current_weight_g)-consume;await tx.run('UPDATE material_rolls SET current_weight_g=$1,status=$2 WHERE id=$3',[nw,nw<=0?'ESGOTADO':nw<=n(roll.min_stock_g)?'EM_USO':'DISPONIVEL',b.roll_id]);await tx.run(`INSERT INTO stock_movements(roll_id,type,reason,quantity_g,reference_id,reference_type,created_by) VALUES($1,'CONSUMO','TESTE',$2,$3,'test',$4)`,[b.roll_id,consume,r.id,req.user.id])}return r});res.json({id:Number(result.id)})}catch(e){next(e)}});
+router.get('/tests',async(req,res,next)=>{try{res.json(await dbAll(`SELECT t.*,COALESCE(t.test_date,t.created_at::date) test_date,
+  p.name project_name,COALESCE(c.name,pc.name) customer_name,pr.name printer_name,pv.version
+  FROM tests t
+  LEFT JOIN projects p ON p.id=t.project_id
+  LEFT JOIN customers c ON c.id=t.customer_id
+  LEFT JOIN customers pc ON pc.id=p.customer_id
+  LEFT JOIN printers pr ON pr.id=t.printer_id
+  LEFT JOIN project_versions pv ON pv.id=t.version_id
+  WHERE t.deleted_at IS NULL
+  ORDER BY COALESCE(t.test_date,t.created_at::date) DESC,t.created_at DESC`))}catch(e){next(e)}});
+router.post('/tests',async(req,res,next)=>{try{const b=req.body;const result=await withTransaction(async tx=>{
+  let projectId=b.project_id||null, customerId=b.customer_id||null;
+  if(projectId){const project=await tx.get('SELECT id,customer_id FROM projects WHERE id=$1 AND deleted_at IS NULL',[projectId]);if(!project)throw Object.assign(new Error('Projeto não encontrado'),{status:404});if(!customerId)customerId=project.customer_id||null;}
+  if(customerId){const customer=await tx.get('SELECT id FROM customers WHERE id=$1 AND deleted_at IS NULL',[customerId]);if(!customer)throw Object.assign(new Error('Cliente/negócio não encontrado'),{status:404});}
+  if(b.version_id && !projectId)throw Object.assign(new Error('A versão depende de um projeto'),{status:400});
+  if(b.version_id){const version=await tx.get('SELECT id FROM project_versions WHERE id=$1 AND project_id=$2',[b.version_id,projectId]);if(!version)throw Object.assign(new Error('Versão não pertence ao projeto selecionado'),{status:400});}
+  const r=await tx.get(`INSERT INTO tests(name,customer_id,project_id,version_id,printer_id,roll_id,est_time_min,real_time_min,est_weight_g,real_weight_g,waste_g,temp_nozzle,temp_bed,layer_height,infill,walls,speed,supports,result,failure_type,failure_cause,notes,test_date)
+    VALUES($1,$2,$3,$4,$5,$6,0,$7,0,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21) RETURNING id`,
+    [b.name||null,customerId,projectId,b.version_id||null,b.printer_id||null,b.roll_id||null,n(b.real_time_min),n(b.real_weight_g),n(b.waste_g),b.temp_nozzle||null,b.temp_bed||null,b.layer_height||null,b.infill||null,b.walls||null,b.speed||null,bool(b.supports),b.result||null,b.failure_type||null,b.failure_cause||null,b.notes||null,(b.test_date||today())]);
+  if(b.roll_id&&n(b.real_weight_g)+n(b.waste_g)>0&&b.result!=='CANCELADO'){const roll=await tx.get('SELECT * FROM material_rolls WHERE id=$1 AND deleted_at IS NULL FOR UPDATE',[b.roll_id]);const consume=n(b.real_weight_g)+n(b.waste_g);if(!roll)throw Object.assign(new Error('Rolo não encontrado'),{status:404});if(n(roll.current_weight_g)<consume)throw Object.assign(new Error('Estoque de filamento insuficiente'),{status:400});const nw=n(roll.current_weight_g)-consume;await tx.run('UPDATE material_rolls SET current_weight_g=$1,status=$2 WHERE id=$3',[nw,nw<=0?'ESGOTADO':nw<=n(roll.min_stock_g)?'EM_USO':'DISPONIVEL',b.roll_id]);await tx.run(`INSERT INTO stock_movements(roll_id,type,reason,quantity_g,reference_id,reference_type,created_by) VALUES($1,'CONSUMO','TESTE',$2,$3,'test',$4)`,[b.roll_id,consume,r.id,req.user.id])}
+  return r
+});res.json({id:Number(result.id)})}catch(e){next(e)}});
 router.put('/tests/:id', async (req, res, next) => {
   try {
     const b = req.body;
@@ -144,28 +177,32 @@ router.put('/tests/:id', async (req, res, next) => {
         await tx.run("UPDATE material_rolls SET current_weight_g=current_weight_g+$1,status=CASE WHEN current_weight_g+$1<=0 THEN 'ESGOTADO' WHEN current_weight_g+$1<=min_stock_g THEN 'EM_USO' ELSE 'DISPONIVEL' END WHERE id=$2", [n(mv.quantity_g), mv.roll_id]);
         await tx.run("INSERT INTO stock_movements(roll_id,type,reason,quantity_g,reference_id,reference_type,created_by) VALUES($1,'DEVOLUCAO','CORRECAO_TESTE',$2,$3,'test',$4)", [mv.roll_id, n(mv.quantity_g), req.params.id, req.user.id]);
       }
-      await tx.run(`UPDATE tests SET project_id=$1,version_id=$2,printer_id=$3,roll_id=$4,est_time_min=$5,real_time_min=$6,est_weight_g=$7,real_weight_g=$8,waste_g=$9,temp_nozzle=$10,temp_bed=$11,layer_height=$12,infill=$13,walls=$14,speed=$15,supports=$16,result=$17,failure_type=$18,failure_cause=$19,notes=$20,test_date=$21 WHERE id=$22`, [
-        b.project_id, b.version_id || null, b.printer_id || null, b.roll_id || null,
-        n(b.est_time_min), n(b.real_time_min), n(b.est_weight_g), n(b.real_weight_g), n(b.waste_g),
-        b.temp_nozzle ?? null, b.temp_bed ?? null, b.layer_height ?? null, b.infill ?? null, b.walls ?? null,
-        b.speed ?? null, bool(b.supports), b.result || null, b.failure_type || null, b.failure_cause || null,
-        b.notes || null, (b.test_date || today()), req.params.id
+      let nextProjectId=b.project_id||null, nextCustomerId=b.customer_id||null;
+      if(nextProjectId){const project=await tx.get('SELECT id,customer_id FROM projects WHERE id=$1 AND deleted_at IS NULL',[nextProjectId]);if(!project)throw Object.assign(new Error('Projeto não encontrado'),{status:404});if(!nextCustomerId)nextCustomerId=project.customer_id||null;}
+      if(nextCustomerId){const customer=await tx.get('SELECT id FROM customers WHERE id=$1 AND deleted_at IS NULL',[nextCustomerId]);if(!customer)throw Object.assign(new Error('Cliente/negócio não encontrado'),{status:404});}
+      if(b.version_id && !nextProjectId)throw Object.assign(new Error('A versão depende de um projeto'),{status:400});
+      if(b.version_id){const version=await tx.get('SELECT id FROM project_versions WHERE id=$1 AND project_id=$2',[b.version_id,nextProjectId]);if(!version)throw Object.assign(new Error('Versão não pertence ao projeto selecionado'),{status:400});}
+      await tx.run(`UPDATE tests SET name=$1,customer_id=$2,project_id=$3,version_id=$4,printer_id=$5,roll_id=$6,est_time_min=0,real_time_min=$7,est_weight_g=0,real_weight_g=$8,waste_g=$9,temp_nozzle=$10,temp_bed=$11,layer_height=$12,infill=$13,walls=$14,speed=$15,supports=$16,result=$17,failure_type=$18,failure_cause=$19,notes=$20,test_date=$21 WHERE id=$22`, [
+        b.name||null,nextCustomerId,nextProjectId,b.version_id||null,b.printer_id||null,b.roll_id||null,
+        n(b.real_time_min),n(b.real_weight_g),n(b.waste_g),
+        b.temp_nozzle ?? null,b.temp_bed ?? null,b.layer_height ?? null,b.infill ?? null,b.walls ?? null,
+        b.speed ?? null,bool(b.supports),b.result||null,b.failure_type||null,b.failure_cause||null,b.notes||null,
+        (b.test_date||today()),req.params.id
       ]);
-      const consume = Math.max(0, n(b.real_weight_g) + n(b.waste_g));
-      if (b.roll_id && consume > 0 && b.result !== 'CANCELADO') {
-        const roll = await tx.get('SELECT * FROM material_rolls WHERE id=$1 AND deleted_at IS NULL FOR UPDATE', [b.roll_id]);
-        if (!roll) throw Object.assign(new Error('Rolo não encontrado'), { status: 404 });
-        if (n(roll.current_weight_g) < consume) throw Object.assign(new Error('Estoque de filamento insuficiente'), { status: 400 });
-        const nw = n(roll.current_weight_g) - consume;
-        await tx.run('UPDATE material_rolls SET current_weight_g=$1,status=$2 WHERE id=$3', [nw, nw <= 0 ? 'ESGOTADO' : nw <= n(roll.min_stock_g) ? 'EM_USO' : 'DISPONIVEL', b.roll_id]);
-        await tx.run("INSERT INTO stock_movements(roll_id,type,reason,quantity_g,reference_id,reference_type,created_by) VALUES($1,'CONSUMO','TESTE',$2,$3,'test',$4)", [b.roll_id, consume, req.params.id, req.user.id]);
+      const consume=Math.max(0,n(b.real_weight_g)+n(b.waste_g));
+      if(b.roll_id&&consume>0&&b.result!=='CANCELADO'){
+        const roll=await tx.get('SELECT * FROM material_rolls WHERE id=$1 AND deleted_at IS NULL FOR UPDATE',[b.roll_id]);
+        if(!roll)throw Object.assign(new Error('Rolo não encontrado'),{status:404});
+        if(n(roll.current_weight_g)<consume)throw Object.assign(new Error('Estoque de filamento insuficiente'),{status:400});
+        const nw=n(roll.current_weight_g)-consume;
+        await tx.run('UPDATE material_rolls SET current_weight_g=$1,status=$2 WHERE id=$3',[nw,nw<=0?'ESGOTADO':nw<=n(roll.min_stock_g)?'EM_USO':'DISPONIVEL',b.roll_id]);
+        await tx.run("INSERT INTO stock_movements(roll_id,type,reason,quantity_g,reference_id,reference_type,created_by) VALUES($1,'CONSUMO','TESTE',$2,$3,'test',$4)",[b.roll_id,consume,req.params.id,req.user.id]);
       }
       return true;
     });
     res.json({ ok: result });
   } catch (e) { next(e); }
 });
-
 router.delete('/tests/:id', adminOnly, async (req,res,next)=>{try{
   await withTransaction(async tx=>{
     const old=await tx.get('SELECT * FROM tests WHERE id=$1 AND deleted_at IS NULL FOR UPDATE',[req.params.id]);

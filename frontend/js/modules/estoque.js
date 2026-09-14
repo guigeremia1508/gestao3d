@@ -33,6 +33,7 @@ function renderEstoque(filter = '') {
               <td>${badge(r.status)}</td>
               <td><div class="actions">
                 <button class="btn btn-secondary btn-sm" onclick="openRollMovModal(${r.id},'${r.code||r.type}')">↕️</button>
+                <button class="btn btn-danger btn-sm" onclick="deleteRoll(${r.id},'${String(r.code||r.type).replaceAll("'","\\'")}')">Excluir</button>
               </div></td>
             </tr>`).join('') : '<tr><td colspan="9" style="text-align:center;color:var(--text2);padding:2rem">Nenhum rolo cadastrado</td></tr>'}
         </tbody>
@@ -121,3 +122,10 @@ async function openMovModal() {
 }
 
 window.openMovModal=openMovModal;window.saveMov=saveMov;
+
+async function deleteRoll(id,name) {
+  if (!confirmAction(`Excluir o filamento/rolo "${name}"? O histórico será preservado.`)) return;
+  try { await API.del(`/rolls/${id}`); toast('Filamento excluído com segurança!'); pageRenderers.estoque(); }
+  catch (e) { toast(e.message,'err'); }
+}
+window.deleteRoll=deleteRoll;

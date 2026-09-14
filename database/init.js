@@ -162,7 +162,8 @@ CREATE TABLE IF NOT EXISTS audit_logs (
 CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_user ON audit_logs(user_id);
 CREATE TABLE IF NOT EXISTS tests (
-  id BIGSERIAL PRIMARY KEY, project_id BIGINT NOT NULL REFERENCES projects(id), version_id BIGINT REFERENCES project_versions(id),
+  id BIGSERIAL PRIMARY KEY, project_id BIGINT REFERENCES projects(id) ON DELETE SET NULL, customer_id BIGINT REFERENCES customers(id) ON DELETE SET NULL,
+  name TEXT, source_key TEXT, version_id BIGINT REFERENCES project_versions(id),
   printer_id BIGINT REFERENCES printers(id), roll_id BIGINT REFERENCES material_rolls(id), est_time_min NUMERIC(14,2), real_time_min NUMERIC(14,2),
   est_weight_g NUMERIC(14,2), real_weight_g NUMERIC(14,2), waste_g NUMERIC(14,2) DEFAULT 0, temp_nozzle NUMERIC(8,2), temp_bed NUMERIC(8,2),
   layer_height NUMERIC(8,3), infill INTEGER, walls INTEGER, speed NUMERIC(8,2), supports BOOLEAN DEFAULT FALSE,
@@ -293,6 +294,12 @@ async function initDb() {
   await p.query(`ALTER TABLE maintenance_plans ADD COLUMN IF NOT EXISTS next_due_hours NUMERIC(14,2)`);
   await p.query(`ALTER TABLE maintenance_plans ADD COLUMN IF NOT EXISTS notes TEXT`);
   await p.query(`ALTER TABLE tests ADD COLUMN IF NOT EXISTS test_date DATE`);
+  await p.query(`ALTER TABLE tests ALTER COLUMN project_id DROP NOT NULL`);
+  await p.query(`ALTER TABLE tests ADD COLUMN IF NOT EXISTS customer_id BIGINT REFERENCES customers(id) ON DELETE SET NULL`);
+  await p.query(`ALTER TABLE tests ADD COLUMN IF NOT EXISTS name TEXT`);
+  await p.query(`ALTER TABLE tests ADD COLUMN IF NOT EXISTS source_key TEXT`);
+  await p.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_tests_source_key ON tests(source_key) WHERE source_key IS NOT NULL`);
+  await p.query(`CREATE INDEX IF NOT EXISTS idx_tests_customer ON tests(customer_id)`);
   await p.query(`UPDATE maintenance_plans SET active=TRUE WHERE active IS NULL`);
   await p.query(`UPDATE maintenance_plans SET interval_hours=NULL WHERE interval_hours IS NOT NULL AND interval_hours<=0`);
   await p.query(`UPDATE maintenance_plans SET interval_days=NULL WHERE interval_days IS NOT NULL AND interval_days<=0`);
@@ -339,6 +346,59 @@ async function initDb() {
       await dbRun('INSERT INTO users (name,email,password,role) VALUES ($1,$2,$3,$4)', ['Administrador', String(email).trim().toLowerCase(), await argon2.hash(String(password), {type:argon2.argon2id}), 'ADMIN']);
     }
   }
+  // Historical test data provided for the current project version. Idempotent and stock-neutral.
+  const historicalTests = [
+    ['Benchy (Primeira Impressão)', '2026-09-05', 14, 12.0, 'historico-2026-09-05-01'],
+    ['Espátula Creality', '2026-09-05', 30, 17.4, 'historico-2026-09-05-02'],
+    ['Mini Jacaré', '2026-09-05', 11, 1.5, 'historico-2026-09-05-03'],
+    ['Limpador de Filamento', '2026-09-07', 28, 3.0, 'historico-2026-09-07-01'],
+    ['Mini Picles', '2026-09-07', 24, 1.2, 'historico-2026-09-07-02'],
+    ['Avião v1', '2026-09-08', 17, 4.2, 'historico-2026-09-08-01'],
+    ['Mini Jacaré (Cópia)', '2026-09-09', 11, 1.5, 'historico-2026-09-09-01'],
+    ['Avião v1 (Cópia)', '2026-09-09', 17, 4.2, 'historico-2026-09-09-02'],
+    ['Limpador de Filamento (Cópia)', '2026-09-10', 28, 3.0, 'historico-2026-09-10-01'],
+    ['Avião v2', '2026-09-12', 24, 8.4, 'historico-2026-09-12-01'],
+    ['Parador de Porta', '2026-09-13', 36, 19.8, 'historico-2026-09-13-01'],
+    ['6 Palhetas Juntas', '2026-09-13', 6, 3.9, 'historico-2026-09-13-02'],
+    ['Avião v3', '2026-09-13', 28, 12.6, 'historico-2026-09-13-03'],
+  ];
+  const printerName = 'Creality Ender-3 V3 Plus';
+  let historicalPrinter = await dbGet(`SELECT id, deleted_at FROM printers WHERE name=$1 ORDER BY deleted_at NULLS FIRST, id LIMIT 1`, [printerName]);
+  if (!historicalPrinter) {
+    const created = await dbGet(`INSERT INTO printers(name,status) VALUES($1,'DISPONIVEL') RETURNING id`, [printerName]);
+    historicalPrinter = created;
+  } else if (historicalPrinter.deleted_at) {
+    await dbRun(`UPDATE printers SET deleted_at=NULL WHERE id=$1`, [historicalPrinter.id]);
+  }
+  for (const [name, date, minutes, grams, sourceKey] of historicalTests) {
+    await dbRun(`INSERT INTO tests(name,source_key,printer_id,real_time_min,real_weight_g,waste_g,result,test_date,notes)
+      VALUES($1,$2,$3,$4,$5,0,'APROVADO',$6,$7)
+      ON CONFLICT (source_key) DO NOTHING`,
+      [name,sourceKey,historicalPrinter.id,minutes,grams,date,'Importado como histórico oficial; sem movimentação de estoque.']);
+  }
+  await dbRun(`UPDATE printers p SET
+      total_hours = COALESCE(t.test_hours,0) + COALESCE(pj.prod_hours,0),
+      total_prints = COALESCE(t.test_prints,0) + COALESCE(pj.prod_prints,0),
+      filament_used_g = COALESCE(t.test_filament,0) + COALESCE(pj.prod_filament,0),
+      total_failures = COALESCE(t.test_failures,0) + COALESCE(pj.prod_failures,0)
+    FROM (
+      SELECT printer_id,
+        COALESCE(SUM(CASE WHEN real_time_min>0 AND result<>'CANCELADO' THEN real_time_min ELSE 0 END),0)/60 test_hours,
+        COALESCE(COUNT(*) FILTER (WHERE real_time_min>0 AND result<>'CANCELADO'),0)::int test_prints,
+        COALESCE(SUM(CASE WHEN real_time_min>0 AND result<>'CANCELADO' THEN COALESCE(real_weight_g,0)+COALESCE(waste_g,0) ELSE 0 END),0) test_filament,
+        COALESCE(COUNT(*) FILTER (WHERE result='REPROVADO'),0)::int test_failures
+      FROM tests WHERE deleted_at IS NULL AND printer_id IS NOT NULL GROUP BY printer_id
+    ) t
+    LEFT JOIN (
+      SELECT printer_id,
+        COALESCE(SUM(CASE WHEN status<>'CANCELADO' THEN COALESCE(real_time_min,0) ELSE 0 END),0)/60 prod_hours,
+        COALESCE(COUNT(*) FILTER (WHERE status<>'CANCELADO'),0)::int prod_prints,
+        COALESCE(SUM(CASE WHEN status<>'CANCELADO' THEN COALESCE(real_weight_g,0)+COALESCE(waste_g,0) ELSE 0 END),0) prod_filament,
+        COALESCE(COUNT(*) FILTER (WHERE status='FALHA'),0)::int prod_failures
+      FROM production_jobs WHERE printer_id IS NOT NULL GROUP BY printer_id
+    ) pj ON pj.printer_id=t.printer_id
+    WHERE p.id=t.printer_id`);
+
   console.log('✅ PostgreSQL inicializado');
 }
 
